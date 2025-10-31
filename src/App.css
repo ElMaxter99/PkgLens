@@ -10,10 +10,16 @@
 .app__header {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+}
+
+.app__headline {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.app__header h1 {
+.app__headline h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3rem);
   color: var(--color-primary-strong);
@@ -23,6 +29,13 @@
   margin: 0.75rem 0 0;
   color: var(--color-text-muted);
   max-width: 48ch;
+}
+
+.app__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
 }
 
 .app__controls {
@@ -39,6 +52,57 @@
     justify-content: space-between;
     gap: 2rem;
   }
+
+  .app__header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+}
+
+.app__theme-toggle,
+.app__theme-system {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 1.2rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform var(--transition-medium), box-shadow var(--transition-medium), background var(--transition-medium);
+}
+
+.app__theme-toggle:hover,
+.app__theme-system:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.app__theme-toggle:focus-visible,
+.app__theme-system:focus-visible {
+  outline: 3px solid transparent;
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.app__theme-system:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.app__theme-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.app__theme-label {
+  white-space: nowrap;
 }
 
 .app__switch label {

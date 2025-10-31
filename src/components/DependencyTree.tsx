@@ -164,6 +164,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [exportingFormat, setExportingFormat] = useState<'png' | 'pdf' | null>(null);
   const [graphTheme, setGraphTheme] = useState<GraphTheme>({
     nodeFill: '#3e6bff',
     nodeWarningFill: '#f97316',
@@ -493,6 +494,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
 
     let objectUrl: string | null = null;
     try {
+      setExportingFormat(format);
       const svg = svgRef.current;
       const clone = svg.cloneNode(true) as SVGSVGElement;
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -572,6 +574,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
+      setExportingFormat(null);
     }
   };
 
@@ -667,7 +670,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
               type="button"
               className="dependency-tree__action"
               onClick={() => exportGraph('png')}
-              disabled={!graphReady}
+              disabled={!graphReady || exportingFormat !== null}
             >
               Exportar PNG
             </button>
@@ -675,142 +678,164 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
               type="button"
               className="dependency-tree__action"
               onClick={() => exportGraph('pdf')}
-              disabled={!graphReady}
+              disabled={!graphReady || exportingFormat !== null}
             >
               Exportar PDF
             </button>
+            {exportingFormat && (
+              <div className="dependency-tree__export-loader" role="status" aria-live="polite">
+                <span className="dependency-tree__spinner" aria-hidden="true" />
+                Generando {exportingFormat === 'png' ? 'PNG' : 'PDF'}...
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {loading && <p className="dependency-tree__status">Resolviendo dependencias...</p>}
+      {loading && (
+        <div className="dependency-tree__loader" role="status" aria-live="polite">
+          <p className="dependency-tree__loader-text">Resolviendo dependencias...</p>
+          <div
+            className="dependency-tree__progress"
+            role="progressbar"
+            aria-label="Resolviendo dependencias"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext="Analizando dependencias"
+          >
+            <span className="dependency-tree__progress-bar" aria-hidden="true" />
+          </div>
+        </div>
+      )}
       {error && !loading && <p className="dependency-tree__status dependency-tree__status--error">{error}</p>}
 
       {!loading && !error && data && data.tree.length === 0 && (
         <p className="dependency-tree__status">Añade dependencias para visualizar el grafo.</p>
       )}
 
-      {!loading && !error && data && data.tree.length > 0 && viewMode === 'tree' && (
-        <ol className="tree-root">{data.tree.map((node) => renderNode(node))}</ol>
-      )}
+      {!loading && !error && data && data.tree.length > 0 && (
+        <>
+          {viewMode === 'tree' && <ol className="tree-root">{data.tree.map((node) => renderNode(node))}</ol>}
 
-      {!loading && !error && data && data.tree.length > 0 && viewMode === 'graph' && (
-        <div
-          className={composeClassName('graph-view', {
-            'graph-view--panning': isPanning,
-          })}
-          role="img"
-          aria-label="Grafo de dependencias"
-          ref={containerRef}
-        >
-          <svg
-            ref={svgRef}
-            width="100%"
-            height="100%"
-            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-            preserveAspectRatio="xMidYMid meet"
-            onWheel={handleWheel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onPointerLeave={handlePointerLeave}
+          <div
+            className={composeClassName('graph-view', {
+              'graph-view--panning': isPanning,
+              'graph-view--hidden': viewMode !== 'graph',
+            })}
+            role="img"
+            aria-label="Grafo de dependencias"
+            aria-hidden={viewMode !== 'graph'}
+            ref={containerRef}
           >
-            <defs>
-              <marker id="graph-arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L9,3 z" fill={graphTheme.edge} />
-              </marker>
-            </defs>
-            {edges.map((edge) => {
-              const from = nodePositionMap.get(edge.from);
-              const to = nodePositionMap.get(edge.to);
-              if (!from || !to) {
-                return null;
-              }
-              return (
-                <line
-                  key={`${edge.from}-${edge.to}`}
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={graphTheme.edge}
-                  strokeWidth={1.6}
-                  markerEnd="url(#graph-arrow)"
-                  vectorEffect="non-scaling-stroke"
-                >
-                  <title>{`${edge.fromLabel} → ${edge.toLabel}`}</title>
-                </line>
-              );
-            })}
-            {layout.nodes.map((node) => {
-              const hasIssues = node.issues.length > 0;
-              const fillColor = hasIssues ? graphTheme.nodeWarningFill : graphTheme.nodeFill;
-              return (
-                <g
-                  key={node.id}
-                  className="graph-node"
-                  tabIndex={0}
-                  role="group"
-                  aria-label={`${node.label}. ${summarizeIssues(node.issues) || 'Sin incidencias detectadas.'}`}
-                  onPointerEnter={handleNodePointerEnter(node)}
-                  onPointerMove={handleNodePointerMove(node)}
-                  onPointerLeave={handleNodePointerLeave}
-                  onFocus={handleNodeFocus(node)}
-                  onBlur={handleNodeBlur}
-                >
-                  <circle cx={node.x} cy={node.y} r={32} fill={fillColor} fillOpacity={0.9} />
-                  <text x={node.x} y={node.y - 44} fill={graphTheme.textPrimary} className="graph-node__title">
-                    {node.label}
-                  </text>
-                  <text x={node.x} y={node.y - 18} fill={graphTheme.textMuted} className="graph-node__version">
-                    {node.declaredRange}
-                  </text>
-                  <text x={node.x} y={node.y + 8} fill={graphTheme.textPrimary} className="graph-node__version">
-                    {formatVersionLabel(node.resolvedVersion, node.latestVersion)}
-                  </text>
-                  <title>{`Declarado: ${node.declaredRange}\n${formatVersionLabel(node.resolvedVersion, node.latestVersion)}`}</title>
-                </g>
-              );
-            })}
-          </svg>
-          {tooltip && (
-            <div
-              className="graph-tooltip"
-              style={{ left: `${tooltip.position.x}px`, top: `${tooltip.position.y}px` }}
-              role="status"
-              aria-live="polite"
+            <svg
+              ref={svgRef}
+              width="100%"
+              height="100%"
+              viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+              preserveAspectRatio="xMidYMid meet"
+              onWheel={handleWheel}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onPointerLeave={handlePointerLeave}
             >
-              <h3>{tooltip.node.label}</h3>
-              <div className="graph-tooltip__meta">
-                <span>
-                  <strong>Declarado:</strong> {tooltip.node.declaredRange}
-                </span>
-                <span>
-                  <strong>Instalado:</strong> {formatVersionLabel(tooltip.node.resolvedVersion, tooltip.node.latestVersion)}
-                </span>
-                {tooltip.node.latestVersion && (
+              <defs>
+                <marker id="graph-arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill={graphTheme.edge} />
+                </marker>
+              </defs>
+              {edges.map((edge) => {
+                const from = nodePositionMap.get(edge.from);
+                const to = nodePositionMap.get(edge.to);
+                if (!from || !to) {
+                  return null;
+                }
+                return (
+                  <line
+                    key={`${edge.from}-${edge.to}`}
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke={graphTheme.edge}
+                    strokeWidth={1.6}
+                    markerEnd="url(#graph-arrow)"
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <title>{`${edge.fromLabel} → ${edge.toLabel}`}</title>
+                  </line>
+                );
+              })}
+              {layout.nodes.map((node) => {
+                const hasIssues = node.issues.length > 0;
+                const fillColor = hasIssues ? graphTheme.nodeWarningFill : graphTheme.nodeFill;
+                return (
+                  <g
+                    key={node.id}
+                    className="graph-node"
+                    tabIndex={0}
+                    role="group"
+                    aria-label={`${node.label}. ${summarizeIssues(node.issues) || 'Sin incidencias detectadas.'}`}
+                    onPointerEnter={handleNodePointerEnter(node)}
+                    onPointerMove={handleNodePointerMove(node)}
+                    onPointerLeave={handleNodePointerLeave}
+                    onFocus={handleNodeFocus(node)}
+                    onBlur={handleNodeBlur}
+                  >
+                    <circle cx={node.x} cy={node.y} r={32} fill={fillColor} fillOpacity={0.9} />
+                    <text x={node.x} y={node.y - 44} fill={graphTheme.textPrimary} className="graph-node__title">
+                      {node.label}
+                    </text>
+                    <text x={node.x} y={node.y - 18} fill={graphTheme.textMuted} className="graph-node__version">
+                      {node.declaredRange}
+                    </text>
+                    <text x={node.x} y={node.y + 8} fill={graphTheme.textPrimary} className="graph-node__version">
+                      {formatVersionLabel(node.resolvedVersion, node.latestVersion)}
+                    </text>
+                    <title>{`Declarado: ${node.declaredRange}\n${formatVersionLabel(node.resolvedVersion, node.latestVersion)}`}</title>
+                  </g>
+                );
+              })}
+            </svg>
+            {viewMode === 'graph' && tooltip && (
+              <div
+                className="graph-tooltip"
+                style={{ left: `${tooltip.position.x}px`, top: `${tooltip.position.y}px` }}
+                role="status"
+                aria-live="polite"
+              >
+                <h3>{tooltip.node.label}</h3>
+                <div className="graph-tooltip__meta">
                   <span>
-                    <strong>Última:</strong> {tooltip.node.latestVersion}
+                    <strong>Declarado:</strong> {tooltip.node.declaredRange}
                   </span>
-                )}
-                <span>{tooltip.node.rangeDescription}</span>
-              </div>
-              {!!tooltip.node.issues.length && (
-                <div className="graph-tooltip__issues">
-                  {tooltip.node.issues.map((issue) => (
-                    <span
-                      key={`${issue.type}-${issue.message}`}
-                      className={`graph-tooltip__issue ${getTooltipIssueClass(issue.type)}`}
-                    >
-                      {issue.message}
+                  <span>
+                    <strong>Instalado:</strong> {formatVersionLabel(tooltip.node.resolvedVersion, tooltip.node.latestVersion)}
+                  </span>
+                  {tooltip.node.latestVersion && (
+                    <span>
+                      <strong>Última:</strong> {tooltip.node.latestVersion}
                     </span>
-                  ))}
+                  )}
+                  <span>{tooltip.node.rangeDescription}</span>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                {!!tooltip.node.issues.length && (
+                  <div className="graph-tooltip__issues">
+                    {tooltip.node.issues.map((issue) => (
+                      <span
+                        key={`${issue.type}-${issue.message}`}
+                        className={`graph-tooltip__issue ${getTooltipIssueClass(issue.type)}`}
+                      >
+                        {issue.message}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </section>
   );

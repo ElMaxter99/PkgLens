@@ -12,6 +12,25 @@ import {
 
 import './App.css';
 
+type ThemeMode = 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'pkgLensTheme';
+
+const readStoredTheme = (): ThemeMode | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'light' || stored === 'dark' ? stored : null;
+};
+
+const detectSystemTheme = (): ThemeMode => {
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
 const DEFAULT_PACKAGE: PackageDefinition = {
   dependencies: {
     react: '^19.2.0',
@@ -46,31 +65,50 @@ function App(): JSX.Element {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [includeDevDependencies, setIncludeDevDependencies] = useState<boolean>(false);
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const stored = readStoredTheme();
+    return stored ?? detectSystemTheme();
+  });
+  const [hasManualTheme, setHasManualTheme] = useState<boolean>(() => readStoredTheme() !== null);
 
   const serializedDefault = useMemo(() => JSON.stringify(DEFAULT_PACKAGE, null, 2), []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.style.setProperty('color-scheme', theme);
+  }, [theme]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
-    const root = document.documentElement;
+    if (hasManualTheme) {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } else {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    }
+  }, [theme, hasManualTheme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-    const applyTheme = (isDark: boolean) => {
-      root.dataset.theme = isDark ? 'dark' : 'light';
-    };
-
-    applyTheme(mediaQuery.matches);
-
     const handleChange = (event: MediaQueryListEvent) => {
-      applyTheme(event.matches);
+      if (!hasManualTheme) {
+        setTheme(event.matches ? 'dark' : 'light');
+      }
     };
 
     mediaQuery.addEventListener('change', handleChange);
     return () => {
       mediaQuery.removeEventListener('change', handleChange);
     };
-  }, []);
+  }, [hasManualTheme]);
 
   const handlePackageChange = useCallback(
     (data: Record<string, unknown>) => {
@@ -89,6 +127,16 @@ function App(): JSX.Element {
 
   const handleError = useCallback((message: string) => {
     setErrorMessage(message);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setHasManualTheme(true);
+    setTheme((previous) => (previous === 'light' ? 'dark' : 'light'));
+  }, []);
+
+  const handleFollowSystemTheme = useCallback(() => {
+    setHasManualTheme(false);
+    setTheme(detectSystemTheme());
   }, []);
 
   useEffect(() => {
@@ -137,10 +185,34 @@ function App(): JSX.Element {
   return (
     <main className="app">
       <header className="app__header">
-        <h1>PkgLens</h1>
-        <p className="app__subtitle">
-          Analiza el árbol de dependencias de tu proyecto, detecta versiones duplicadas, conflictos y oportunidades de actualización.
-        </p>
+        <div className="app__headline">
+          <h1>PkgLens</h1>
+          <p className="app__subtitle">
+            Analiza el árbol de dependencias de tu proyecto, detecta versiones duplicadas, conflictos y oportunidades de actualización.
+          </p>
+        </div>
+        <div className="app__header-actions">
+          <button
+            type="button"
+            className="app__theme-toggle"
+            aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+            aria-pressed={theme === 'dark'}
+            onClick={toggleTheme}
+          >
+            <span className="app__theme-icon" aria-hidden="true">
+              {theme === 'dark' ? '🌙' : '☀️'}
+            </span>
+            <span className="app__theme-label">Modo {theme === 'dark' ? 'oscuro' : 'claro'}</span>
+          </button>
+          <button
+            type="button"
+            className="app__theme-system"
+            onClick={handleFollowSystemTheme}
+            disabled={!hasManualTheme}
+          >
+            Seguir sistema
+          </button>
+        </div>
       </header>
 
       <section className="app__controls">
