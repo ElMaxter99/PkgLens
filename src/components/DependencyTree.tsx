@@ -23,11 +23,14 @@ const ISSUE_TYPES = ['vulnerable', 'conflict', 'outdated', 'duplicate'] as const
 
 type IssueFilterType = typeof ISSUE_TYPES[number];
 
+type FlattenedNode = { node: DependencyNode; path: string };
+
 interface IssuePanelEntry {
   node: DependencyNode;
   issue: VersionIssue & { type: IssueFilterType };
   nodeKey: string;
   priority: number;
+  treePath: string;
 }
 
 const ISSUE_LABELS: Record<IssueFilterType, string> = {
@@ -369,20 +372,21 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
   );
   const graphReady = layout.nodes.length > 0 && !loading && !error;
 
-  const flattenedNodes = useMemo(() => {
+  const flattenedNodes = useMemo<Array<FlattenedNode>>(() => {
     if (!data?.tree) {
-      return [] as DependencyNode[];
+      return [] as Array<FlattenedNode>;
     }
-    const nodes: DependencyNode[] = [];
-    const visit = (items: DependencyNode[]) => {
-      items.forEach((node) => {
-        nodes.push(node);
+    const nodes: Array<FlattenedNode> = [];
+    const visit = (items: DependencyNode[], parentPath: string) => {
+      items.forEach((node, index) => {
+        const currentPath = parentPath ? `${parentPath}.${index}` : `${index}`;
+        nodes.push({ node, path: currentPath });
         if (node.children.length) {
-          visit(node.children);
+          visit(node.children, currentPath);
         }
       });
     };
-    visit(data.tree);
+    visit(data.tree, '');
     return nodes;
   }, [data]);
 
@@ -392,7 +396,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
       return acc;
     }, {} as Record<IssueFilterType, number>);
 
-    flattenedNodes.forEach((node) => {
+    flattenedNodes.forEach(({ node }) => {
       node.issues.forEach((issue) => {
         if (isPanelIssueType(issue.type)) {
           counts[issue.type] += 1;
@@ -410,7 +414,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     }
     const filterSet = new Set<IssueFilterType>(activeIssueFilters);
 
-    flattenedNodes.forEach((node) => {
+    flattenedNodes.forEach(({ node, path }) => {
       node.issues.forEach((issue) => {
         if (!isPanelIssueType(issue.type)) {
           return;
@@ -424,6 +428,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
           issue: { ...issue, type: issue.type as IssueFilterType },
           nodeKey: createNodeKey(node.nodeId),
           priority: ISSUE_PRIORITY[issue.type],
+          treePath: path,
         });
       });
     });
@@ -1168,7 +1173,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
               {issuePanelItems.length > 0 ? (
                 issuePanelItems.map((item) => (
                   <article
-                    key={`${item.node.nodeId}-${item.issue.type}-${item.issue.message}`}
+                    key={`${item.node.nodeId}-${item.issue.type}-${item.issue.message}-${item.treePath}`}
                     className="dependency-tree__issue-card"
                     data-issue-type={item.issue.type}
                     title={summarizeIssues(item.node.issues)}
