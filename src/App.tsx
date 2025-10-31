@@ -19,6 +19,28 @@ type ViewMode = 'current' | 'target' | 'scenario';
 
 const THEME_STORAGE_KEY = 'pkgLensTheme';
 
+const ANALYSIS_ORDER: ViewMode[] = ['current', 'target', 'scenario'];
+
+const ANALYSIS_LABELS: Record<ViewMode, string> = {
+  current: 'Proyecto actual',
+  target: 'Migración objetivo',
+  scenario: 'Escenario what-if',
+};
+
+const formatTargetsList = (targets: string[]): string => {
+  if (targets.length === 0) {
+    return '';
+  }
+  if (targets.length === 1) {
+    return targets[0];
+  }
+  if (targets.length === 2) {
+    return `${targets[0]} y ${targets[1]}`;
+  }
+  const rest = targets.slice(0, -1).join(', ');
+  return `${rest} y ${targets[targets.length - 1]}`;
+};
+
 const readStoredTheme = (): ThemeMode | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -104,6 +126,11 @@ function App(): JSX.Element {
   const [includeDevDependencies, setIncludeDevDependencies] = useState<boolean>(false);
   const [hasPendingChanges, setHasPendingChanges] = useState<boolean>(true);
   const [scenarioDirty, setScenarioDirty] = useState<boolean>(false);
+  const [analysisScope, setAnalysisScope] = useState<Record<ViewMode, boolean>>({
+    current: true,
+    target: true,
+    scenario: false,
+  });
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const stored = readStoredTheme();
     return stored ?? detectSystemTheme();
@@ -192,6 +219,18 @@ function App(): JSX.Element {
   const handleScenarioChange = useCallback((pkg: PackageDefinition | null) => {
     setScenarioDirty(true);
     setScenarioPackage(pkg ? clonePackageDefinition(pkg) : null);
+    setAnalysisScope((previous) => {
+      if (pkg && !previous.scenario) {
+        return { ...previous, scenario: true };
+      }
+      if (!pkg && previous.scenario) {
+        return { ...previous, scenario: false };
+      }
+      return previous;
+    });
+    if (!pkg) {
+      setAnalysisResults((previous) => ({ ...previous, scenario: null }));
+    }
     setHasPendingChanges(true);
   }, []);
 
@@ -211,8 +250,79 @@ function App(): JSX.Element {
     setTheme(detectSystemTheme());
   }, []);
 
+  const resolvePackageForView = useCallback(
+    (view: ViewMode): PackageDefinition | null => {
+      if (view === 'current') {
+        return currentPackage;
+      }
+      if (view === 'target') {
+        return targetPackage;
+      }
+      return scenarioPackage;
+    },
+    [currentPackage, scenarioPackage, targetPackage],
+  );
+
+  const analysisTargets = useMemo(
+    () =>
+      ANALYSIS_ORDER.filter((view) => analysisScope[view]).filter(
+        (view) => resolvePackageForView(view) !== null,
+      ),
+    [analysisScope, resolvePackageForView],
+  );
+
+  const hasAnalysisSelection = analysisTargets.length > 0;
+
+  const handleAnalysisScopeChange = useCallback(
+    (view: ViewMode, checked: boolean) => {
+      let updated = false;
+      setAnalysisScope((previous) => {
+        const availability: Record<ViewMode, boolean> = {
+          current: true,
+          target: Boolean(targetPackage),
+          scenario: Boolean(scenarioPackage),
+        };
+        const selectable = ANALYSIS_ORDER.filter((key) => availability[key]);
+        const selectedCount = selectable.filter((key) => previous[key]).length;
+        if (!checked && previous[view] && selectedCount <= 1) {
+          return previous;
+        }
+        if (previous[view] === checked) {
+          return previous;
+        }
+        updated = true;
+        return { ...previous, [view]: checked };
+      });
+      if (updated) {
+        setHasPendingChanges(true);
+        if (!checked) {
+          setAnalysisResults((previous) => ({ ...previous, [view]: null }));
+        }
+      }
+    },
+    [scenarioPackage, targetPackage],
+  );
+
+  useEffect(() => {
+    if (analysisScope.target && !targetPackage) {
+      setAnalysisScope((previous) => ({ ...previous, target: false }));
+      setAnalysisResults((previous) => ({ ...previous, target: null }));
+    }
+  }, [analysisScope.target, targetPackage]);
+
+  useEffect(() => {
+    if (analysisScope.scenario && !scenarioPackage) {
+      setAnalysisScope((previous) => ({ ...previous, scenario: false }));
+      setAnalysisResults((previous) => ({ ...previous, scenario: null }));
+    }
+  }, [analysisScope.scenario, scenarioPackage]);
+
   const handleAnalyze = useCallback(async () => {
     if (loading) {
+      return;
+    }
+    if (!analysisTargets.length) {
+      setHasPendingChanges(true);
       return;
     }
     setLoading(true);
@@ -221,15 +331,7 @@ function App(): JSX.Element {
       const options: ResolveOptions = {
         includeDev: includeDevDependencies,
       };
-      const packagesToResolve: Array<[ViewMode, PackageDefinition]> = [
-        ['current', currentPackage],
-      ];
-      if (targetPackage) {
-        packagesToResolve.push(['target', targetPackage]);
-      }
-      if (scenarioPackage) {
-        packagesToResolve.push(['scenario', scenarioPackage]);
-      }
+      const packagesToResolve = analysisTargets.map((view) => [view, resolvePackageForView(view)!] as const);
 
       const resolvedEntries = await Promise.all(
         packagesToResolve.map(async ([key, pkg]) => {
@@ -244,12 +346,11 @@ function App(): JSX.Element {
         (resolvedEntries as Array<readonly [ViewMode, DependencyGraphResult]>).forEach(([key, value]) => {
           next[key] = value;
         });
-        if (!resolvedKeys.has('target')) {
-          next.target = null;
-        }
-        if (!resolvedKeys.has('scenario')) {
-          next.scenario = null;
-        }
+        ANALYSIS_ORDER.forEach((key) => {
+          if (!resolvedKeys.has(key)) {
+            next[key] = null;
+          }
+        });
         return next;
       });
       setHasPendingChanges(false);
@@ -263,17 +364,7 @@ function App(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [currentPackage, includeDevDependencies, loading, scenarioPackage, targetPackage]);
-
-  const resolvePackageForView = (view: ViewMode): PackageDefinition | null => {
-    if (view === 'current') {
-      return currentPackage;
-    }
-    if (view === 'target') {
-      return targetPackage;
-    }
-    return scenarioPackage;
-  };
+  }, [analysisTargets, includeDevDependencies, loading, resolvePackageForView]);
 
   const activePackage = resolvePackageForView(activeView) ?? currentPackage;
   const dependenciesCount = Object.keys(activePackage?.dependencies ?? {}).length;
@@ -289,6 +380,9 @@ function App(): JSX.Element {
   const issueDiff = activeView === 'current' ? null : diffIssueSummary(analysisResults.current, comparisonResult);
 
   const activeResult = analysisResults[activeView];
+  const selectedTargetLabels = analysisTargets.map((view) => ANALYSIS_LABELS[view]);
+  const formattedTargetList = formatTargetsList(selectedTargetLabels);
+  const analyzeDisabled = loading || !hasAnalysisSelection;
 
   return (
     <main className="app">
@@ -318,116 +412,153 @@ function App(): JSX.Element {
         </div>
       </header>
 
-      <section className="app__controls">
-        <div className="app__switch">
-          <label htmlFor="toggle-dev">
-            <input
-              id="toggle-dev"
-              type="checkbox"
-              checked={includeDevDependencies}
-              onChange={(event) => {
-                setIncludeDevDependencies(event.target.checked);
-                setHasPendingChanges(true);
-              }}
+      <section className="app__workspace">
+        <div className="app__panel app__panel--analysis">
+          <div className="app__panel-header">
+            <h2>Análisis de package.json</h2>
+            <p>Prepara tus manifiestos antes de lanzar el comparador y decide a qué vistas enviar el próximo análisis.</p>
+          </div>
+          <div className="app__panel-actions">
+            <div className="app__analysis-settings">
+              <div className="app__switch">
+                <label htmlFor="toggle-dev">
+                  <input
+                    id="toggle-dev"
+                    type="checkbox"
+                    checked={includeDevDependencies}
+                    onChange={(event) => {
+                      setIncludeDevDependencies(event.target.checked);
+                      setHasPendingChanges(true);
+                    }}
+                  />
+                  Incluir devDependencies ({devDependenciesCount})
+                </label>
+              </div>
+              <fieldset className="app__analysis-targets">
+                <legend>Enviar al análisis</legend>
+                {ANALYSIS_ORDER.map((view) => (
+                  <label key={view} className="app__analysis-target">
+                    <input
+                      type="checkbox"
+                      checked={analysisScope[view]}
+                      onChange={(event) => handleAnalysisScopeChange(view, event.target.checked)}
+                      disabled={
+                        (view === 'target' && !targetPackage) || (view === 'scenario' && !scenarioPackage)
+                      }
+                    />
+                    <span>{ANALYSIS_LABELS[view]}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </div>
+            <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={analyzeDisabled}>
+              {loading && <span className="app__button-spinner" aria-hidden="true" />}
+              <span>{loading ? 'Analizando...' : 'Analizar selección'}</span>
+            </button>
+          </div>
+          <div className="app__analysis-feedback" role="status" aria-live="polite">
+            {loading ? (
+              <span className="app__pending app__pending--active">
+                <span className="app__button-spinner" aria-hidden="true" /> Resolviendo dependencias...
+              </span>
+            ) : !hasAnalysisSelection ? (
+              <span className="app__pending">Selecciona al menos un manifiesto para enviar al análisis.</span>
+            ) : hasPendingChanges ? (
+              <span className="app__pending">
+                {formattedTargetList
+                  ? `Tienes cambios sin analizar. Ejecuta el análisis para actualizar ${formattedTargetList}.`
+                  : 'Tienes cambios sin analizar. Ejecuta el análisis para refrescar los resultados.'}
+              </span>
+            ) : (
+              <span className="app__pending app__pending--success">
+                {formattedTargetList
+                  ? `Último análisis actualizado para ${formattedTargetList}.`
+                  : 'Último análisis actualizado.'}
+              </span>
+            )}
+          </div>
+          <div className="app__inputs">
+            <FileUploader
+              id="current-package"
+              title="1. Paquete actual"
+              description="Sube o pega el package.json instalado en tu entorno actual. Usa este punto de partida como base para cualquier comparación."
+              onPackageChange={handleCurrentPackageChange}
+              onError={handleError}
+              defaultValue={serializedCurrent}
+              actionLabel="Seleccionar package.json actual"
             />
-            Incluir devDependencies ({devDependenciesCount})
-          </label>
+            <FileUploader
+              id="target-package"
+              title="2. Paquete objetivo"
+              description="Carga la versión candidata a producción para comparar su árbol de dependencias con el proyecto actual."
+              onPackageChange={handleTargetPackageChange}
+              onError={handleError}
+              defaultValue={serializedTarget}
+              actionLabel="Seleccionar package.json objetivo"
+            />
+          </div>
+          <ScenarioEditor
+            basePackage={targetPackage}
+            value={scenarioPackage}
+            onChange={handleScenarioChange}
+            onReset={handleScenarioReset}
+            disabled={!targetPackage}
+          />
         </div>
-        <div className="app__actions">
-          <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={loading}>
-            {loading ? 'Analizando...' : 'Analizar dependencias'}
-          </button>
-          {!loading && hasPendingChanges && (
-            <span className="app__pending" role="status">
-              {activeResult
-                ? 'Tienes cambios sin analizar. Ejecuta el análisis para actualizar el reporte.'
-                : 'Ejecuta el análisis para generar o refrescar el grafo de dependencias.'}
-            </span>
-          )}
-          {loading && (
-            <span className="app__pending app__pending--active" role="status" aria-live="polite">
-              <span className="app__pending-spinner" aria-hidden="true" />
-              Resolviendo dependencias...
-            </span>
-          )}
-        </div>
-        <div className="app__stats" aria-live="polite">
-          <span className="app__stat">Dependencias: {dependenciesCount}</span>
-          <span className="app__stat">Dev: {devDependenciesCount}</span>
-          {dependencyDiff && (
-            <span className="app__stat app__stat--accent">
-              Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
-            </span>
-          )}
-          {issueDiff && (
-            <span className="app__stat app__stat--accent">
-              Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
-            </span>
-          )}
+        <div className="app__panel app__panel--comparison">
+          <div className="app__panel-header">
+            <h2>Comparador de dependencias</h2>
+            <p>Explora el árbol y grafo generados para cada análisis seleccionado.</p>
+          </div>
+          <div className="app__comparison-toolbar">
+            <nav className="app__view-selector" aria-label="Vista activa del comparador">
+              <button
+                type="button"
+                className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
+                onClick={() => setActiveView('current')}
+              >
+                Proyecto actual
+              </button>
+              <button
+                type="button"
+                className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
+                onClick={() => setActiveView('target')}
+                disabled={!targetPackage}
+              >
+                Migración objetivo
+              </button>
+              <button
+                type="button"
+                className={`app__view ${activeView === 'scenario' ? 'app__view--active' : ''}`}
+                onClick={() => setActiveView('scenario')}
+                disabled={!scenarioPackage}
+              >
+                Escenario what-if
+              </button>
+            </nav>
+            <div className="app__comparison-meta" aria-live="polite">
+              <div className="app__stats">
+                <span className="app__stat">Dependencias: {dependenciesCount}</span>
+                <span className="app__stat">Dev: {devDependenciesCount}</span>
+                {dependencyDiff && (
+                  <span className="app__stat app__stat--accent">
+                    Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
+                  </span>
+                )}
+                {issueDiff && (
+                  <span className="app__stat app__stat--accent">
+                    Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
+                  </span>
+                )}
+              </div>
+              {!loading && hasPendingChanges && hasAnalysisSelection && (
+                <span className="app__pending">Vuelve a ejecutar el análisis para sincronizar el comparador.</span>
+              )}
+            </div>
+          </div>
+          <DependencyTree data={activeResult} loading={loading} error={errorMessage} hasPendingChanges={hasPendingChanges} />
         </div>
       </section>
-
-      <nav className="app__view-selector" aria-label="Vista activa del grafo">
-        <button
-          type="button"
-          className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('current')}
-        >
-          Proyecto actual
-        </button>
-        <button
-          type="button"
-          className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('target')}
-          disabled={!targetPackage}
-        >
-          Migración objetivo
-        </button>
-        <button
-          type="button"
-          className={`app__view ${activeView === 'scenario' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('scenario')}
-          disabled={!scenarioPackage}
-        >
-          Escenario what-if
-        </button>
-      </nav>
-
-      <div className="app__inputs">
-        <FileUploader
-          id="current-package"
-          title="1. Paquete actual"
-          description="Sube o pega el package.json instalado en tu entorno actual. Usa este punto de partida como base para cualquier comparación."
-          onPackageChange={handleCurrentPackageChange}
-          onError={handleError}
-          defaultValue={serializedCurrent}
-          actionLabel="Seleccionar package.json actual"
-        />
-        <FileUploader
-          id="target-package"
-          title="2. Paquete objetivo"
-          description="Carga la versión candidata a producción para comparar su árbol de dependencias con el proyecto actual."
-          onPackageChange={handleTargetPackageChange}
-          onError={handleError}
-          defaultValue={serializedTarget}
-          actionLabel="Seleccionar package.json objetivo"
-        />
-      </div>
-
-      <ScenarioEditor
-        basePackage={targetPackage}
-        value={scenarioPackage}
-        onChange={handleScenarioChange}
-        onReset={handleScenarioReset}
-        disabled={!targetPackage}
-      />
-
-      <DependencyTree
-        data={activeResult}
-        loading={loading}
-        error={errorMessage}
-        hasPendingChanges={hasPendingChanges}
-      />
     </main>
   );
 }

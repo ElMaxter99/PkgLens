@@ -884,8 +884,8 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     <section className="dependency-tree">
       <header className="dependency-tree__header">
         <div>
-          <h2>2. Visualiza y audita tus dependencias</h2>
-          <p>Compara rangos declarados, versiones instaladas y posibles incidencias.</p>
+          <h2>Explora los resultados del análisis</h2>
+          <p>Alterna entre el árbol y el grafo para revisar versiones, incidencias y exportar reportes.</p>
         </div>
         <div className="dependency-tree__controls">
           <div className="dependency-tree__view-toggle" role="group" aria-label="Cambiar vista">
