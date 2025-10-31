@@ -16,6 +16,7 @@ import './App.css';
 
 type ThemeMode = 'light' | 'dark';
 type ViewMode = 'current' | 'target' | 'scenario';
+type WorkspaceZone = 'analysis' | 'comparison' | 'scenario';
 
 const THEME_STORAGE_KEY = 'pkgLensTheme';
 
@@ -25,6 +26,18 @@ const ANALYSIS_LABELS: Record<ViewMode, string> = {
   current: 'Proyecto actual',
   target: 'Migración objetivo',
   scenario: 'Escenario what-if',
+};
+
+const ZONE_LABELS: Record<WorkspaceZone, string> = {
+  analysis: 'Analizar package.json',
+  comparison: 'Comparador de dependencias',
+  scenario: 'Escenario what-if',
+};
+
+const ZONE_DESCRIPTIONS: Record<WorkspaceZone, string> = {
+  analysis: 'Carga manifiestos y define qué vistas recibirán el próximo análisis.',
+  comparison: 'Revisa el grafo resultante y navega por incidencias priorizadas.',
+  scenario: 'Ajusta una proyección hipotética antes de lanzar nuevos análisis.',
 };
 
 const formatTargetsList = (targets: string[]): string => {
@@ -120,6 +133,7 @@ function App(): JSX.Element {
     target: null,
     scenario: null,
   });
+  const [activeZone, setActiveZone] = useState<WorkspaceZone>('analysis');
   const [activeView, setActiveView] = useState<ViewMode>('current');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -182,6 +196,12 @@ function App(): JSX.Element {
       setScenarioPackage(clonePackageDefinition(targetPackage));
     }
   }, [targetPackage, scenarioDirty]);
+
+  useEffect(() => {
+    if (activeZone === 'scenario' && !targetPackage) {
+      setActiveZone('analysis');
+    }
+  }, [activeZone, targetPackage]);
 
   const handleError = useCallback((message: string) => {
     setErrorMessage(message);
@@ -412,152 +432,197 @@ function App(): JSX.Element {
         </div>
       </header>
 
-      <section className="app__workspace">
-        <div className="app__panel app__panel--analysis">
-          <div className="app__panel-header">
-            <h2>Análisis de package.json</h2>
-            <p>Prepara tus manifiestos antes de lanzar el comparador y decide a qué vistas enviar el próximo análisis.</p>
-          </div>
-          <div className="app__panel-actions">
-            <div className="app__analysis-settings">
-              <div className="app__switch">
-                <label htmlFor="toggle-dev">
-                  <input
-                    id="toggle-dev"
-                    type="checkbox"
-                    checked={includeDevDependencies}
-                    onChange={(event) => {
-                      setIncludeDevDependencies(event.target.checked);
-                      setHasPendingChanges(true);
-                    }}
-                  />
-                  Incluir devDependencies ({devDependenciesCount})
-                </label>
-              </div>
-              <fieldset className="app__analysis-targets">
-                <legend>Enviar al análisis</legend>
-                {ANALYSIS_ORDER.map((view) => (
-                  <label key={view} className="app__analysis-target">
-                    <input
-                      type="checkbox"
-                      checked={analysisScope[view]}
-                      onChange={(event) => handleAnalysisScopeChange(view, event.target.checked)}
-                      disabled={
-                        (view === 'target' && !targetPackage) || (view === 'scenario' && !scenarioPackage)
-                      }
-                    />
-                    <span>{ANALYSIS_LABELS[view]}</span>
-                  </label>
-                ))}
-              </fieldset>
-            </div>
-            <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={analyzeDisabled}>
-              {loading && <span className="app__button-spinner" aria-hidden="true" />}
-              <span>{loading ? 'Analizando...' : 'Analizar selección'}</span>
+      <section className="app__zones" aria-label="Áreas de trabajo">
+        {(['analysis', 'comparison', 'scenario'] as WorkspaceZone[]).map((zone) => {
+          const disabled = zone === 'scenario' && !targetPackage;
+          return (
+            <button
+              key={zone}
+              type="button"
+              className={`app__zone ${activeZone === zone ? 'app__zone--active' : ''}`}
+              onClick={() => setActiveZone(zone)}
+              disabled={disabled}
+              aria-pressed={activeZone === zone}
+            >
+              <span className="app__zone-title">{ZONE_LABELS[zone]}</span>
+              <span className="app__zone-description">{ZONE_DESCRIPTIONS[zone]}</span>
+              {disabled && <span className="app__zone-hint">Carga un objetivo para habilitar.</span>}
             </button>
-          </div>
-          <div className="app__analysis-feedback" role="status" aria-live="polite">
-            {loading ? (
-              <span className="app__pending app__pending--active">
-                <span className="app__button-spinner" aria-hidden="true" /> Resolviendo dependencias...
-              </span>
-            ) : !hasAnalysisSelection ? (
-              <span className="app__pending">Selecciona al menos un manifiesto para enviar al análisis.</span>
-            ) : hasPendingChanges ? (
-              <span className="app__pending">
-                {formattedTargetList
-                  ? `Tienes cambios sin analizar. Ejecuta el análisis para actualizar ${formattedTargetList}.`
-                  : 'Tienes cambios sin analizar. Ejecuta el análisis para refrescar los resultados.'}
-              </span>
-            ) : (
-              <span className="app__pending app__pending--success">
-                {formattedTargetList
-                  ? `Último análisis actualizado para ${formattedTargetList}.`
-                  : 'Último análisis actualizado.'}
-              </span>
-            )}
-          </div>
-          <div className="app__inputs">
-            <FileUploader
-              id="current-package"
-              title="1. Paquete actual"
-              description="Sube o pega el package.json instalado en tu entorno actual. Usa este punto de partida como base para cualquier comparación."
-              onPackageChange={handleCurrentPackageChange}
-              onError={handleError}
-              defaultValue={serializedCurrent}
-              actionLabel="Seleccionar package.json actual"
-            />
-            <FileUploader
-              id="target-package"
-              title="2. Paquete objetivo"
-              description="Carga la versión candidata a producción para comparar su árbol de dependencias con el proyecto actual."
-              onPackageChange={handleTargetPackageChange}
-              onError={handleError}
-              defaultValue={serializedTarget}
-              actionLabel="Seleccionar package.json objetivo"
-            />
-          </div>
-          <ScenarioEditor
-            basePackage={targetPackage}
-            value={scenarioPackage}
-            onChange={handleScenarioChange}
-            onReset={handleScenarioReset}
-            disabled={!targetPackage}
-          />
-        </div>
-        <div className="app__panel app__panel--comparison">
-          <div className="app__panel-header">
-            <h2>Comparador de dependencias</h2>
-            <p>Explora el árbol y grafo generados para cada análisis seleccionado.</p>
-          </div>
-          <div className="app__comparison-toolbar">
-            <nav className="app__view-selector" aria-label="Vista activa del comparador">
-              <button
-                type="button"
-                className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
-                onClick={() => setActiveView('current')}
-              >
-                Proyecto actual
-              </button>
-              <button
-                type="button"
-                className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
-                onClick={() => setActiveView('target')}
-                disabled={!targetPackage}
-              >
-                Migración objetivo
-              </button>
-              <button
-                type="button"
-                className={`app__view ${activeView === 'scenario' ? 'app__view--active' : ''}`}
-                onClick={() => setActiveView('scenario')}
-                disabled={!scenarioPackage}
-              >
-                Escenario what-if
-              </button>
-            </nav>
-            <div className="app__comparison-meta" aria-live="polite">
-              <div className="app__stats">
-                <span className="app__stat">Dependencias: {dependenciesCount}</span>
-                <span className="app__stat">Dev: {devDependenciesCount}</span>
-                {dependencyDiff && (
-                  <span className="app__stat app__stat--accent">
-                    Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
-                  </span>
-                )}
-                {issueDiff && (
-                  <span className="app__stat app__stat--accent">
-                    Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
-                  </span>
-                )}
+          );
+        })}
+      </section>
+
+      <section className="app__canvas">
+        {activeZone === 'analysis' && (
+          <div className="app__panel app__panel--analysis">
+            <div className="app__panel-header">
+              <h2>Análisis de package.json</h2>
+              <p>Prepara los manifiestos y decide qué vistas recibirán el próximo análisis.</p>
+            </div>
+            <div className="app__panel-actions">
+              <div className="app__analysis-settings">
+                <div className="app__switch">
+                  <label htmlFor="toggle-dev">
+                    <input
+                      id="toggle-dev"
+                      type="checkbox"
+                      checked={includeDevDependencies}
+                      onChange={(event) => {
+                        setIncludeDevDependencies(event.target.checked);
+                        setHasPendingChanges(true);
+                      }}
+                    />
+                    Incluir devDependencies ({devDependenciesCount})
+                  </label>
+                </div>
+                <fieldset className="app__analysis-targets">
+                  <legend>Enviar al análisis</legend>
+                  {ANALYSIS_ORDER.map((view) => (
+                    <label key={view} className="app__analysis-target">
+                      <input
+                        type="checkbox"
+                        checked={analysisScope[view]}
+                        onChange={(event) => handleAnalysisScopeChange(view, event.target.checked)}
+                        disabled={
+                          (view === 'target' && !targetPackage) || (view === 'scenario' && !scenarioPackage)
+                        }
+                      />
+                      <span>{ANALYSIS_LABELS[view]}</span>
+                    </label>
+                  ))}
+                </fieldset>
               </div>
-              {!loading && hasPendingChanges && hasAnalysisSelection && (
-                <span className="app__pending">Vuelve a ejecutar el análisis para sincronizar el comparador.</span>
+              <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={analyzeDisabled}>
+                {loading && <span className="app__button-spinner" aria-hidden="true" />}
+                <span>{loading ? 'Analizando...' : 'Analizar selección'}</span>
+              </button>
+            </div>
+            <div className="app__analysis-feedback" role="status" aria-live="polite">
+              {loading ? (
+                <span className="app__pending app__pending--active">
+                  <span className="app__button-spinner" aria-hidden="true" /> Resolviendo dependencias...
+                </span>
+              ) : !hasAnalysisSelection ? (
+                <span className="app__pending">Selecciona al menos un manifiesto para enviar al análisis.</span>
+              ) : hasPendingChanges ? (
+                <span className="app__pending">
+                  {formattedTargetList
+                    ? `Tienes cambios sin analizar. Ejecuta el análisis para actualizar ${formattedTargetList}.`
+                    : 'Tienes cambios sin analizar. Ejecuta el análisis para refrescar los resultados.'}
+                </span>
+              ) : (
+                <span className="app__pending app__pending--success">
+                  {formattedTargetList
+                    ? `Último análisis actualizado para ${formattedTargetList}.`
+                    : 'Último análisis actualizado.'}
+                </span>
               )}
             </div>
+            <div className="app__inputs">
+              <FileUploader
+                id="current-package"
+                title="1. Paquete actual"
+                description="Sube o pega el package.json instalado en tu entorno actual. Usa este punto de partida como base para cualquier comparación."
+                onPackageChange={handleCurrentPackageChange}
+                onError={handleError}
+                defaultValue={serializedCurrent}
+                actionLabel="Seleccionar package.json actual"
+              />
+              <FileUploader
+                id="target-package"
+                title="2. Paquete objetivo"
+                description="Carga la versión candidata a producción para comparar su árbol de dependencias con el proyecto actual."
+                onPackageChange={handleTargetPackageChange}
+                onError={handleError}
+                defaultValue={serializedTarget}
+                actionLabel="Seleccionar package.json objetivo"
+              />
+            </div>
           </div>
-          <DependencyTree data={activeResult} loading={loading} error={errorMessage} hasPendingChanges={hasPendingChanges} />
-        </div>
+        )}
+
+        {activeZone === 'comparison' && (
+          <div className="app__panel app__panel--comparison">
+            <div className="app__panel-header">
+              <h2>Comparador de dependencias</h2>
+              <p>Explora el árbol y grafo generados para cada análisis seleccionado.</p>
+            </div>
+            <div className="app__comparison-toolbar">
+              <nav className="app__view-selector" aria-label="Vista activa del comparador">
+                <button
+                  type="button"
+                  className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
+                  onClick={() => setActiveView('current')}
+                >
+                  Proyecto actual
+                </button>
+                <button
+                  type="button"
+                  className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
+                  onClick={() => setActiveView('target')}
+                  disabled={!targetPackage}
+                >
+                  Migración objetivo
+                </button>
+                <button
+                  type="button"
+                  className={`app__view ${activeView === 'scenario' ? 'app__view--active' : ''}`}
+                  onClick={() => setActiveView('scenario')}
+                  disabled={!scenarioPackage}
+                >
+                  Escenario what-if
+                </button>
+              </nav>
+              <div className="app__comparison-meta" aria-live="polite">
+                <div className="app__stats">
+                  <span className="app__stat">Dependencias: {dependenciesCount}</span>
+                  <span className="app__stat">Dev: {devDependenciesCount}</span>
+                  {dependencyDiff && (
+                    <span className="app__stat app__stat--accent">
+                      Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
+                    </span>
+                  )}
+                  {issueDiff && (
+                    <span className="app__stat app__stat--accent">
+                      Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
+                    </span>
+                  )}
+                </div>
+                {!loading && hasPendingChanges && hasAnalysisSelection && (
+                  <span className="app__pending">Vuelve a ejecutar el análisis para sincronizar el comparador.</span>
+                )}
+              </div>
+            </div>
+            <DependencyTree data={activeResult} loading={loading} error={errorMessage} hasPendingChanges={hasPendingChanges} />
+          </div>
+        )}
+
+        {activeZone === 'scenario' && (
+          <div className="app__panel app__panel--scenario">
+            <div className="app__panel-header">
+              <h2>Escenario what-if</h2>
+              <p>Parte del objetivo, modifica versiones y envía el escenario a un próximo análisis.</p>
+            </div>
+            <div className="app__scenario-status" aria-live="polite">
+              {analysisScope.scenario ? (
+                <span className="app__pending app__pending--success">
+                  Este escenario se incluirá en el siguiente análisis.
+                </span>
+              ) : (
+                <span className="app__pending">
+                  Activa el escenario en la zona de análisis para incorporarlo al próximo cálculo.
+                </span>
+              )}
+            </div>
+            <ScenarioEditor
+              basePackage={targetPackage}
+              value={scenarioPackage}
+              onChange={handleScenarioChange}
+              onReset={handleScenarioReset}
+              disabled={!targetPackage}
+            />
+          </div>
+        )}
       </section>
     </main>
   );
