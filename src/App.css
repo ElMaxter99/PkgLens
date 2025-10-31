@@ -39,22 +39,10 @@
 }
 
 @media (min-width: 640px) {
-  .app__panel-actions {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.5rem;
-  }
-
-  .app__analysis-settings {
-    flex-direction: row;
-    align-items: center;
-    gap: 1.25rem;
-  }
-
   .app__analysis-targets {
     flex-direction: row;
     align-items: center;
+    justify-content: center;
     flex-wrap: wrap;
     gap: 0.75rem;
   }
@@ -62,11 +50,6 @@
   .app__analysis-targets legend {
     margin: 0;
     margin-right: 0.75rem;
-  }
-
-  .app__analyze {
-    width: auto;
-    flex-shrink: 0;
   }
 }
 
@@ -83,13 +66,6 @@
   gap: 2rem;
 }
 
-@media (min-width: 1200px) {
-  .app__workspace {
-    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
-    align-items: start;
-  }
-}
-
 .app__panel {
   background: var(--color-surface);
   border-radius: 1.5rem;
@@ -98,6 +74,11 @@
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+}
+
+.app__panel--analysis {
+  width: min(100%, 740px);
+  margin-inline: auto;
 }
 
 .app__panel--comparison {
@@ -125,12 +106,16 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  align-items: center;
 }
 
 .app__analysis-settings {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  align-items: center;
+  width: min(100%, 640px);
+  text-align: center;
 }
 
 .app__analysis-targets {
@@ -141,13 +126,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  align-items: center;
+  text-align: center;
+  width: 100%;
 }
 
 .app__analysis-targets legend {
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--color-text-muted);
+  text-align: center;
 }
 
 .app__analysis-target {
@@ -157,6 +146,7 @@
   font-weight: 600;
   color: var(--color-text-primary);
   cursor: pointer;
+  justify-content: center;
 }
 
 .app__analysis-target span {
@@ -233,6 +223,11 @@
   transition: transform var(--transition-medium), box-shadow var(--transition-medium), background var(--transition-medium);
   justify-content: center;
   width: 100%;
+}
+
+.app__panel--analysis .app__analyze {
+  width: min(100%, 260px);
+  align-self: center;
 }
 
 .app__analyze:hover {
