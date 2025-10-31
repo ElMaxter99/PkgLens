@@ -1,0 +1,68 @@
+# ----------------------------------------
+# React / Node / TypeScript project
+# ----------------------------------------
+
+# Node dependencies
+/node_modules/
+/npm-debug.log*
+/yarn-debug.log*
+/yarn-error.log*
+/pnpm-debug.log*
+
+# Build output
+/build/
+/dist/
+/coverage/
+
+# Temporary files
+/.cache/
+/.tmp/
+/temp/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Logs
+logs
+*.log
+*.log.*
+
+# Environment files (sensitive data)
+.env
+.env.*.local
+*.env.local
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript build artifacts
+*.tsbuildinfo
+
+# Testing
+/coverage
+jest.config.js
+jest.config.ts
+
+# Local tools
+/.eslintcache
+/.prettiercache
+
+# Optional lockfiles if not used
+# Uncomment only the one you're using
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ----------------------------------------
+# Custom (project-specific)
+# ----------------------------------------
+# Uploaded example package.jsons or test data
+/example-package.json
+/test-data/
