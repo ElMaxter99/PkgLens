@@ -7,8 +7,10 @@ import {
   formatVersionLabel,
   isOutdated,
   mergeIssues,
+  normalizeRange,
   VersionIssue,
 } from '../utils/semverUtils';
+import { getCriticalVulnerabilityIssues } from '../utils/vulnerabilityService';
 
 export interface DependencyEdge {
   from: string;
@@ -84,6 +86,7 @@ async function resolveDependency(
 ): Promise<DependencyNode> {
   const issues: VersionIssue[] = [];
   const rangeDescription = describeRange(declaredRange);
+  const normalizedRange = normalizeRange(declaredRange);
 
   if (depth > context.options.maxDepth) {
     return {
@@ -132,6 +135,23 @@ async function resolveDependency(
       if (versionMetadata) {
         children = await resolveNestedDependencies(nodeId, name, versionMetadata, depth + 1, context);
       }
+    }
+
+    const vulnerabilityIssues = resolvedVersion
+      ? await getCriticalVulnerabilityIssues(name, resolvedVersion)
+      : [];
+    if (vulnerabilityIssues.length) {
+      issues.push(...vulnerabilityIssues);
+    }
+
+    if (normalizedRange === '*') {
+      const target = latestVersion ?? resolvedVersion;
+      issues.push({
+        type: 'advice',
+        message: target
+          ? `El rango abierto '*' permite cualquier versión. Cambia a ^${target} para acotar las actualizaciones.`
+          : "El rango abierto '*' permite cualquier versión. Cambia a un rango acotado (^ o ~) para mejorar la reproducibilidad.",
+      });
     }
 
     if (isOutdated(resolvedVersion, latestVersion)) {
