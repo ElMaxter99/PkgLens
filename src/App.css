@@ -142,10 +142,6 @@
   gap: 2rem;
 }
 
-.app__panel--scenario {
-  gap: 1.5rem;
-}
-
 .app__panel-header {
   display: flex;
   flex-direction: column;
@@ -182,72 +178,11 @@
   text-align: center;
 }
 
-.app__analysis-targets {
-  border: 1px solid var(--color-border);
-  border-radius: 1rem;
-  padding: 0.75rem 1rem 1rem;
-  background: var(--color-surface-alt);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: center;
-  text-align: center;
-  width: 100%;
-}
-
-.app__analysis-targets legend {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-align: center;
-}
-
-.app__analysis-target {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  justify-content: center;
-}
-
-.app__analysis-target span {
-  padding: 0.35rem 0.8rem;
-  border-radius: 999px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  transition: background var(--transition-medium), color var(--transition-medium), border-color var(--transition-medium);
-}
-
-.app__analysis-target input:checked + span {
-  background: var(--color-primary-soft);
-  border-color: var(--color-primary);
-  color: var(--color-primary-strong);
-}
-
-.app__analysis-target input:disabled + span {
-  opacity: 0.6;
-}
-
-.app__analysis-target input {
-  width: 1.05rem;
-  height: 1.05rem;
-  cursor: pointer;
-}
 
 .app__comparison-toolbar {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-}
-
-.app__comparison-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: flex-start;
 }
 
 @media (min-width: 960px) {
@@ -256,11 +191,6 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 2rem;
-  }
-
-  .app__comparison-meta {
-    align-items: flex-end;
-    text-align: right;
   }
 }
 
@@ -325,10 +255,6 @@
   min-height: 1.5rem;
 }
 
-.app__scenario-status {
-  min-height: 1.5rem;
-}
-
 .app__pending {
   display: inline-flex;
   align-items: center;
@@ -343,6 +269,10 @@
 
 .app__pending--success {
   color: var(--color-primary-strong);
+}
+
+.app__pending--error {
+  color: var(--color-danger);
 }
 
 .app__theme-toggle,
