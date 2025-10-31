@@ -1,34 +1,41 @@
-:root {
-  color-scheme: light;
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-  background: #eef2ff;
-  min-height: 100%;
-}
-
-body {
-  margin: 0;
-  background: #eef2ff;
-}
-
 .app {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  padding: clamp(2rem, 4vw, 3.5rem) 1.5rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 2rem;
 }
 
-.app__header h1 {
+.app__header {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.app__headline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.app__headline h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3rem);
-  color: #1d4ed8;
+  color: var(--color-primary-strong);
 }
 
 .app__subtitle {
   margin: 0.75rem 0 0;
-  color: #475569;
+  color: var(--color-text-muted);
   max-width: 48ch;
+}
+
+.app__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
 }
 
 .app__controls {
@@ -45,6 +52,118 @@ body {
     justify-content: space-between;
     gap: 2rem;
   }
+
+  .app__header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+}
+
+.app__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.app__analyze {
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.6rem;
+  background: var(--color-primary);
+  color: var(--color-text-inverted);
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-medium), box-shadow var(--transition-medium), background var(--transition-medium);
+}
+
+.app__analyze:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: var(--color-primary-strong);
+}
+
+.app__analyze:focus-visible {
+  outline: 3px solid transparent;
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.app__analyze:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.app__pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.app__pending--active {
+  color: var(--color-primary-strong);
+}
+
+.app__pending-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--color-primary-soft);
+  border-top-color: var(--color-primary-strong);
+  animation: dependency-tree-spin 0.85s linear infinite;
+}
+
+.app__theme-toggle,
+.app__theme-system {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 1.2rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform var(--transition-medium), box-shadow var(--transition-medium), background var(--transition-medium);
+}
+
+.app__theme-toggle:hover,
+.app__theme-system:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.app__theme-toggle:focus-visible,
+.app__theme-system:focus-visible {
+  outline: 3px solid transparent;
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.app__theme-system:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.app__theme-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.app__theme-label {
+  white-space: nowrap;
 }
 
 .app__switch label {
@@ -52,12 +171,12 @@ body {
   align-items: center;
   gap: 0.6rem;
   font-weight: 600;
-  color: #1d4ed8;
-  background: white;
+  color: var(--color-primary-strong);
+  background: var(--color-surface);
   border-radius: 999px;
   padding: 0.5rem 1rem;
-  border: 1px solid rgba(29, 78, 216, 0.25);
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.12);
+  border: 1px solid var(--color-primary-soft);
+  box-shadow: var(--shadow-xs);
 }
 
 .app__switch input[type='checkbox'] {
@@ -72,8 +191,8 @@ body {
 }
 
 .app__stat {
-  background: rgba(79, 70, 229, 0.12);
-  color: #312e81;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
   border-radius: 999px;
   padding: 0.4rem 1rem;
   font-weight: 600;
