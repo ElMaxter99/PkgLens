@@ -101,6 +101,9 @@ const getTooltipIssueClass = (type: VersionIssue['type']): string => {
   if (type === 'duplicate') {
     return 'graph-tooltip__issue--success';
   }
+  if (type === 'advice') {
+    return 'graph-tooltip__issue--info';
+  }
   if (type === 'vulnerable' || type === 'conflict' || type === 'error') {
     return 'graph-tooltip__issue--danger';
   }

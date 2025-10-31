@@ -1,6 +1,6 @@
 import semver, { SemVer } from 'semver';
 
-export type VersionIssueType = 'outdated' | 'duplicate' | 'conflict' | 'error' | 'vulnerable';
+export type VersionIssueType = 'outdated' | 'duplicate' | 'conflict' | 'error' | 'vulnerable' | 'advice';
 
 export interface VersionIssue {
   type: VersionIssueType;
@@ -106,13 +106,28 @@ export function describeRange(range: string): string {
 export function collectDuplicateIssues(resolvedVersions: Record<string, Set<string>>): Record<string, VersionIssue[]> {
   return Object.entries(resolvedVersions).reduce<Record<string, VersionIssue[]>>((acc, [pkg, versions]) => {
     if (versions.size > 1) {
-      acc[pkg] = [
+      const versionList = Array.from(versions);
+      const sorted = versionList
+        .filter((version) => semver.valid(version))
+        .sort((a, b) => semver.rcompare(a, b));
+
+      const issues: VersionIssue[] = [
         {
           type: 'duplicate',
-          message: `Se detectaron múltiples versiones instaladas: ${Array.from(versions).join(', ')}`,
-          affectedVersions: Array.from(versions),
+          message: `Se detectaron múltiples versiones instaladas: ${versionList.join(', ')}`,
+          affectedVersions: versionList,
         },
       ];
+
+      const recommended = sorted[0];
+      if (recommended) {
+        issues.push({
+          type: 'advice',
+          message: `Actualiza los manifiestos a ^${recommended} para unificar las ${versions.size} variantes detectadas.`,
+        });
+      }
+
+      acc[pkg] = issues;
     }
     return acc;
   }, {});

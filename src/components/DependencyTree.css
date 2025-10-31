@@ -458,6 +458,11 @@
   color: var(--color-success);
 }
 
+.issues__item--advice {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
 .issues__item--conflict,
 .issues__item--error {
   background: var(--color-danger-soft);
@@ -608,6 +613,10 @@
 
 .graph-tooltip__issue--success {
   background: rgba(52, 211, 153, 0.28);
+}
+
+.graph-tooltip__issue--info {
+  background: rgba(96, 165, 250, 0.28);
 }
 
 .dependency-tree__panel {
