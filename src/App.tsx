@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { JSX } from 'react';
 
 import { FileUploader } from './components/FileUploader';
 import { DependencyTree } from './components/DependencyTree';

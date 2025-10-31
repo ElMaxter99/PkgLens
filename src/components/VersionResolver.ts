@@ -88,6 +88,7 @@ async function resolveDependency(
   if (depth > context.options.maxDepth) {
     return {
       name,
+      nodeId: `${name}@depth-limit`,
       declaredRange,
       resolvedVersion: null,
       latestVersion: null,

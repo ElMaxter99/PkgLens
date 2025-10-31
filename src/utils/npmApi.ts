@@ -4,6 +4,7 @@ export interface NpmVersionMetadata {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  deprecated?: string;
 }
 
 export interface NpmPackageMetadata {
