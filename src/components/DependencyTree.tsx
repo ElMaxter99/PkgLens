@@ -315,15 +315,17 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     }
     readThemeTokens();
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleMediaChange = () => readThemeTokens();
-    mediaQuery.addEventListener('change', handleMediaChange);
+    const mediaQuery = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+    mediaQuery?.addEventListener('change', handleMediaChange);
 
     const observer = new MutationObserver(readThemeTokens);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     return () => {
-      mediaQuery.removeEventListener('change', handleMediaChange);
+      mediaQuery?.removeEventListener('change', handleMediaChange);
       observer.disconnect();
     };
   }, [readThemeTokens]);
@@ -599,7 +601,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     );
   };
 
-  const renderNode = (node: DependencyNode) => {
+  const renderNode = (node: DependencyNode, path: string) => {
     const hasChildren = node.children.length > 0;
     const hasIssues = node.issues.length > 0;
     const isOutdated = node.issues.some((issue) => issue.type === 'outdated');
@@ -608,7 +610,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     const isVulnerable = node.issues.some((issue) => issue.type === 'vulnerable');
 
     return (
-      <li key={node.nodeId} className="tree-node">
+      <li key={path} className="tree-node">
         <div
           className={composeClassName('tree-node__card', {
             'tree-node__card--outdated': isOutdated,
@@ -637,7 +639,9 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
           {renderIssues(node.issues)}
         </div>
         {hasChildren && (
-          <ul className="tree-node__children">{node.children.map((child) => renderNode(child))}</ul>
+          <ul className="tree-node__children">
+            {node.children.map((child, index) => renderNode(child, `${path}.${child.nodeId}-${index}`))}
+          </ul>
         )}
       </li>
     );
@@ -733,7 +737,11 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
 
       {!loading && !error && data && data.tree.length > 0 && (
         <>
-          {viewMode === 'tree' && <ol className="tree-root">{data.tree.map((node) => renderNode(node))}</ol>}
+          {viewMode === 'tree' && (
+            <ol className="tree-root">
+              {data.tree.map((node, index) => renderNode(node, `${node.nodeId}-${index}`))}
+            </ol>
+          )}
 
           <div
             className={composeClassName('graph-view', {
@@ -763,7 +771,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
                   <path d="M0,0 L0,6 L9,3 z" fill={graphTheme.edge} />
                 </marker>
               </defs>
-              {edges.map((edge) => {
+              {edges.map((edge, index) => {
                 const from = nodePositionMap.get(edge.from);
                 const to = nodePositionMap.get(edge.to);
                 if (!from || !to) {
@@ -771,7 +779,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
                 }
                 return (
                   <line
-                    key={`${edge.from}-${edge.to}`}
+                    key={`${edge.from}-${edge.to}-${index}`}
                     x1={from.x}
                     y1={from.y}
                     x2={to.x}
@@ -785,12 +793,12 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
                   </line>
                 );
               })}
-              {layout.nodes.map((node) => {
+              {layout.nodes.map((node, index) => {
                 const hasIssues = node.issues.length > 0;
                 const fillColor = hasIssues ? graphTheme.nodeWarningFill : graphTheme.nodeFill;
                 return (
                   <g
-                    key={node.id}
+                    key={`${node.id}-${index}`}
                     className="graph-node"
                     tabIndex={0}
                     role="group"
