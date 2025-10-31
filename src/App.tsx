@@ -3,7 +3,6 @@ import type { JSX } from 'react';
 
 import { DependencyTree } from './components/DependencyTree';
 import { FileUploader } from './components/FileUploader';
-import { ScenarioEditor } from './components/ScenarioEditor';
 import {
   DependencyGraphResult,
   PackageDefinition,
@@ -15,26 +14,22 @@ import { diffIssueSummary, diffPackageDependencies } from './utils/diffUtils';
 import './App.css';
 
 type ThemeMode = 'light' | 'dark';
-type ViewMode = 'current' | 'target' | 'scenario';
+type WorkspaceZone = 'analysis' | 'comparison';
+type ComparisonView = 'current' | 'target';
 
 const THEME_STORAGE_KEY = 'pkgLensTheme';
 
-const readStoredTheme = (): ThemeMode | null => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' ? stored : null;
+const ZONE_LABELS: Record<WorkspaceZone, string> = {
+  analysis: 'Analizar package.json',
+  comparison: 'Comparador de dependencias',
 };
 
-const detectSystemTheme = (): ThemeMode => {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return 'light';
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const ZONE_DESCRIPTIONS: Record<WorkspaceZone, string> = {
+  analysis: 'Carga un manifiesto y obtén un informe completo del árbol, grafo e incidencias detectadas.',
+  comparison: 'Compara dos package.json para medir el impacto entre versiones y revisar incidencias.',
 };
 
-const DEFAULT_CURRENT: PackageDefinition = {
+const DEFAULT_ANALYSIS: PackageDefinition = {
   dependencies: {
     react: '^19.2.0',
     'react-dom': '^19.2.0',
@@ -59,19 +54,20 @@ const DEFAULT_TARGET: PackageDefinition = {
   },
 };
 
-function clonePackageDefinition(pkg: PackageDefinition | null): PackageDefinition | null {
-  if (!pkg) {
+const readStoredTheme = (): ThemeMode | null => {
+  if (typeof window === 'undefined') {
     return null;
   }
-  const cloned: PackageDefinition = {};
-  if (pkg.dependencies) {
-    cloned.dependencies = { ...pkg.dependencies };
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'light' || stored === 'dark' ? stored : null;
+};
+
+const detectSystemTheme = (): ThemeMode => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return 'light';
   }
-  if (pkg.devDependencies) {
-    cloned.devDependencies = { ...pkg.devDependencies };
-  }
-  return cloned;
-}
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
 
 function normalizePackageDefinition(input: Record<string, unknown>): PackageDefinition {
   const dependencies = extractDependencies(input, 'dependencies');
@@ -90,26 +86,33 @@ function extractDependencies(source: Record<string, unknown>, key: keyof Package
 }
 
 function App(): JSX.Element {
-  const [currentPackage, setCurrentPackage] = useState<PackageDefinition>(DEFAULT_CURRENT);
-  const [targetPackage, setTargetPackage] = useState<PackageDefinition>(DEFAULT_TARGET);
-  const [scenarioPackage, setScenarioPackage] = useState<PackageDefinition | null>(clonePackageDefinition(DEFAULT_TARGET));
-  const [analysisResults, setAnalysisResults] = useState<Record<ViewMode, DependencyGraphResult | null>>({
-    current: null,
-    target: null,
-    scenario: null,
-  });
-  const [activeView, setActiveView] = useState<ViewMode>('current');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [includeDevDependencies, setIncludeDevDependencies] = useState<boolean>(false);
-  const [hasPendingChanges, setHasPendingChanges] = useState<boolean>(true);
-  const [scenarioDirty, setScenarioDirty] = useState<boolean>(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const stored = readStoredTheme();
     return stored ?? detectSystemTheme();
   });
   const [hasManualTheme, setHasManualTheme] = useState<boolean>(() => readStoredTheme() !== null);
+  const [activeZone, setActiveZone] = useState<WorkspaceZone>('analysis');
 
+  const [analysisPackage, setAnalysisPackage] = useState<PackageDefinition>(DEFAULT_ANALYSIS);
+  const [analysisResult, setAnalysisResult] = useState<DependencyGraphResult | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
+  const [analysisPendingChanges, setAnalysisPendingChanges] = useState<boolean>(true);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisIncludeDev, setAnalysisIncludeDev] = useState<boolean>(false);
+
+  const [currentPackage, setCurrentPackage] = useState<PackageDefinition>(DEFAULT_ANALYSIS);
+  const [targetPackage, setTargetPackage] = useState<PackageDefinition>(DEFAULT_TARGET);
+  const [comparisonResults, setComparisonResults] = useState<Record<ComparisonView, DependencyGraphResult | null>>({
+    current: null,
+    target: null,
+  });
+  const [comparisonLoading, setComparisonLoading] = useState<boolean>(false);
+  const [comparisonPendingChanges, setComparisonPendingChanges] = useState<boolean>(true);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [comparisonIncludeDev, setComparisonIncludeDev] = useState<boolean>(false);
+  const [activeView, setActiveView] = useState<ComparisonView>('current');
+
+  const serializedAnalysis = useMemo(() => JSON.stringify(analysisPackage, null, 2), [analysisPackage]);
   const serializedCurrent = useMemo(() => JSON.stringify(currentPackage, null, 2), [currentPackage]);
   const serializedTarget = useMemo(() => JSON.stringify(targetPackage, null, 2), [targetPackage]);
 
@@ -150,56 +153,147 @@ function App(): JSX.Element {
     };
   }, [hasManualTheme]);
 
-  useEffect(() => {
-    if (!scenarioDirty) {
-      setScenarioPackage(clonePackageDefinition(targetPackage));
+  const handleAnalyzePackage = useCallback(async () => {
+    if (analysisLoading) {
+      return;
     }
-  }, [targetPackage, scenarioDirty]);
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const options: ResolveOptions = {
+        includeDev: analysisIncludeDev,
+      };
+      const result = await resolvePackageGraph(analysisPackage, options);
+      setAnalysisResult(result);
+      setAnalysisPendingChanges(false);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudieron resolver las dependencias. Verifica tu conexión y vuelve a intentarlo.';
+      setAnalysisError(message);
+      setAnalysisPendingChanges(true);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, [analysisIncludeDev, analysisLoading, analysisPackage]);
 
-  const handleError = useCallback((message: string) => {
-    setErrorMessage(message);
+  const handleAnalysisError = useCallback((message: string) => {
+    setAnalysisError(message);
+    setAnalysisPendingChanges(true);
+  }, []);
+
+  const handleAnalysisPackageChange = useCallback((data: Record<string, unknown>) => {
+    try {
+      const normalized = normalizePackageDefinition(data);
+      setAnalysisPackage(normalized);
+      setAnalysisPendingChanges(true);
+      setAnalysisError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Ocurrió un problema al interpretar el package.json proporcionado.';
+      handleAnalysisError(message);
+    }
+  }, [handleAnalysisError]);
+
+  const handleComparisonError = useCallback((message: string) => {
+    setComparisonError(message);
+    setComparisonPendingChanges(true);
   }, []);
 
   const handleCurrentPackageChange = useCallback((data: Record<string, unknown>) => {
     try {
       const normalized = normalizePackageDefinition(data);
       setCurrentPackage(normalized);
-      setErrorMessage(null);
-      setHasPendingChanges(true);
+      setComparisonPendingChanges(true);
+      setComparisonError(null);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Ocurrió un problema al interpretar el package.json proporcionado.';
-      setErrorMessage(message);
-      setHasPendingChanges(true);
+      handleComparisonError(message);
     }
-  }, []);
+  }, [handleComparisonError]);
 
   const handleTargetPackageChange = useCallback((data: Record<string, unknown>) => {
     try {
       const normalized = normalizePackageDefinition(data);
       setTargetPackage(normalized);
-      setScenarioDirty(false);
-      setErrorMessage(null);
-      setHasPendingChanges(true);
+      setComparisonPendingChanges(true);
+      setComparisonError(null);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Ocurrió un problema al interpretar el package.json proporcionado.';
-      setErrorMessage(message);
-      setHasPendingChanges(true);
+      handleComparisonError(message);
     }
-  }, []);
+  }, [handleComparisonError]);
 
-  const handleScenarioChange = useCallback((pkg: PackageDefinition | null) => {
-    setScenarioDirty(true);
-    setScenarioPackage(pkg ? clonePackageDefinition(pkg) : null);
-    setHasPendingChanges(true);
-  }, []);
+  useEffect(() => {
+    if (activeView === 'target' && !targetPackage) {
+      setActiveView('current');
+    }
+  }, [activeView, targetPackage]);
 
-  const handleScenarioReset = useCallback(() => {
-    setScenarioDirty(false);
-    setScenarioPackage(clonePackageDefinition(targetPackage));
-    setHasPendingChanges(true);
-  }, [targetPackage]);
+  const handleComparePackages = useCallback(async () => {
+    if (comparisonLoading) {
+      return;
+    }
+    setComparisonLoading(true);
+    setComparisonError(null);
+    try {
+      const options: ResolveOptions = {
+        includeDev: comparisonIncludeDev,
+      };
+      const packagesToResolve: Array<[ComparisonView, PackageDefinition]> = [
+        ['current', currentPackage],
+      ];
+      if (targetPackage) {
+        packagesToResolve.push(['target', targetPackage]);
+      }
+
+      const resolvedEntries = await Promise.all(
+        packagesToResolve.map(async ([key, pkg]) => {
+          const result = await resolvePackageGraph(pkg, options);
+          return [key, result] as const;
+        }),
+      );
+
+      setComparisonResults((previous) => {
+        const next: Record<ComparisonView, DependencyGraphResult | null> = { ...previous };
+        (resolvedEntries as Array<readonly [ComparisonView, DependencyGraphResult]>).forEach(([key, value]) => {
+          next[key] = value;
+        });
+        if (!targetPackage) {
+          next.target = null;
+        }
+        return next;
+      });
+      setComparisonPendingChanges(false);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudieron resolver las dependencias. Verifica tu conexión y vuelve a intentarlo.';
+      setComparisonError(message);
+      setComparisonPendingChanges(true);
+    } finally {
+      setComparisonLoading(false);
+    }
+  }, [comparisonIncludeDev, comparisonLoading, currentPackage, targetPackage]);
+
+  const analysisDependenciesCount = Object.keys(analysisPackage.dependencies ?? {}).length;
+  const analysisDevDependenciesCount = Object.keys(analysisPackage.devDependencies ?? {}).length;
+
+  const activeComparisonPackage = activeView === 'current' ? currentPackage : targetPackage;
+  const comparisonDependenciesCount = Object.keys(activeComparisonPackage?.dependencies ?? {}).length;
+  const comparisonDevDependenciesCount = Object.keys(activeComparisonPackage?.devDependencies ?? {}).length;
+
+  const dependencyDiff = targetPackage
+    ? diffPackageDependencies(currentPackage, targetPackage, comparisonIncludeDev)
+    : null;
+  const issueDiff =
+    targetPackage && comparisonResults.target
+      ? diffIssueSummary(comparisonResults.current, comparisonResults.target)
+      : null;
 
   const toggleTheme = useCallback(() => {
     setHasManualTheme(true);
@@ -211,84 +305,39 @@ function App(): JSX.Element {
     setTheme(detectSystemTheme());
   }, []);
 
-  const handleAnalyze = useCallback(async () => {
-    if (loading) {
-      return;
-    }
-    setLoading(true);
-    setErrorMessage(null);
-    try {
-      const options: ResolveOptions = {
-        includeDev: includeDevDependencies,
-      };
-      const packagesToResolve: Array<[ViewMode, PackageDefinition]> = [
-        ['current', currentPackage],
-      ];
-      if (targetPackage) {
-        packagesToResolve.push(['target', targetPackage]);
-      }
-      if (scenarioPackage) {
-        packagesToResolve.push(['scenario', scenarioPackage]);
-      }
-
-      const resolvedEntries = await Promise.all(
-        packagesToResolve.map(async ([key, pkg]) => {
-          const result = await resolvePackageGraph(pkg, options);
-          return [key, result] as const;
-        }),
+  const analysisMessage = () => {
+    if (analysisLoading) {
+      return (
+        <span className="app__pending app__pending--active">
+          <span className="app__button-spinner" aria-hidden="true" /> Resolviendo dependencias...
+        </span>
       );
-
-      const resolvedKeys = new Set(packagesToResolve.map(([key]) => key));
-      setAnalysisResults((previous) => {
-        const next: Record<ViewMode, DependencyGraphResult | null> = { ...previous };
-        (resolvedEntries as Array<readonly [ViewMode, DependencyGraphResult]>).forEach(([key, value]) => {
-          next[key] = value;
-        });
-        if (!resolvedKeys.has('target')) {
-          next.target = null;
-        }
-        if (!resolvedKeys.has('scenario')) {
-          next.scenario = null;
-        }
-        return next;
-      });
-      setHasPendingChanges(false);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'No se pudieron resolver las dependencias. Verifica tu conexión y vuelve a intentarlo.';
-      setErrorMessage(message);
-      setHasPendingChanges(true);
-    } finally {
-      setLoading(false);
     }
-  }, [currentPackage, includeDevDependencies, loading, scenarioPackage, targetPackage]);
-
-  const resolvePackageForView = (view: ViewMode): PackageDefinition | null => {
-    if (view === 'current') {
-      return currentPackage;
+    if (analysisError) {
+      return <span className="app__pending app__pending--error">{analysisError}</span>;
     }
-    if (view === 'target') {
-      return targetPackage;
+    if (analysisPendingChanges) {
+      return <span className="app__pending">Carga o edita el manifiesto y ejecuta el análisis para refrescar los resultados.</span>;
     }
-    return scenarioPackage;
+    return <span className="app__pending app__pending--success">Último análisis actualizado.</span>;
   };
 
-  const activePackage = resolvePackageForView(activeView) ?? currentPackage;
-  const dependenciesCount = Object.keys(activePackage?.dependencies ?? {}).length;
-  const devDependenciesCount = Object.keys(activePackage?.devDependencies ?? {}).length;
-
-  const comparisonPackage = activeView === 'current' ? null : resolvePackageForView(activeView);
-  const dependencyDiff =
-    activeView === 'current' || !comparisonPackage
-      ? null
-      : diffPackageDependencies(currentPackage, comparisonPackage, includeDevDependencies);
-
-  const comparisonResult = activeView === 'current' ? null : analysisResults[activeView];
-  const issueDiff = activeView === 'current' ? null : diffIssueSummary(analysisResults.current, comparisonResult);
-
-  const activeResult = analysisResults[activeView];
+  const comparisonMessage = () => {
+    if (comparisonLoading) {
+      return (
+        <span className="app__pending app__pending--active">
+          <span className="app__button-spinner" aria-hidden="true" /> Calculando comparativa...
+        </span>
+      );
+    }
+    if (comparisonError) {
+      return <span className="app__pending app__pending--error">{comparisonError}</span>;
+    }
+    if (comparisonPendingChanges) {
+      return <span className="app__pending">Actualiza los manifiestos y vuelve a ejecutar la comparación.</span>;
+    }
+    return <span className="app__pending app__pending--success">Comparación al día.</span>;
+  };
 
   return (
     <main className="app">
@@ -318,116 +367,180 @@ function App(): JSX.Element {
         </div>
       </header>
 
-      <section className="app__controls">
-        <div className="app__switch">
-          <label htmlFor="toggle-dev">
-            <input
-              id="toggle-dev"
-              type="checkbox"
-              checked={includeDevDependencies}
-              onChange={(event) => {
-                setIncludeDevDependencies(event.target.checked);
-                setHasPendingChanges(true);
-              }}
-            />
-            Incluir devDependencies ({devDependenciesCount})
-          </label>
-        </div>
-        <div className="app__actions">
-          <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={loading}>
-            {loading ? 'Analizando...' : 'Analizar dependencias'}
+      <section className="app__zones" aria-label="Áreas de trabajo">
+        {(['analysis', 'comparison'] as WorkspaceZone[]).map((zone) => (
+          <button
+            key={zone}
+            type="button"
+            className={`app__zone ${activeZone === zone ? 'app__zone--active' : ''}`}
+            onClick={() => setActiveZone(zone)}
+            aria-pressed={activeZone === zone}
+          >
+            <span className="app__zone-title">{ZONE_LABELS[zone]}</span>
+            <span className="app__zone-description">{ZONE_DESCRIPTIONS[zone]}</span>
           </button>
-          {!loading && hasPendingChanges && (
-            <span className="app__pending" role="status">
-              {activeResult
-                ? 'Tienes cambios sin analizar. Ejecuta el análisis para actualizar el reporte.'
-                : 'Ejecuta el análisis para generar o refrescar el grafo de dependencias.'}
-            </span>
-          )}
-          {loading && (
-            <span className="app__pending app__pending--active" role="status" aria-live="polite">
-              <span className="app__pending-spinner" aria-hidden="true" />
-              Resolviendo dependencias...
-            </span>
-          )}
-        </div>
-        <div className="app__stats" aria-live="polite">
-          <span className="app__stat">Dependencias: {dependenciesCount}</span>
-          <span className="app__stat">Dev: {devDependenciesCount}</span>
-          {dependencyDiff && (
-            <span className="app__stat app__stat--accent">
-              Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
-            </span>
-          )}
-          {issueDiff && (
-            <span className="app__stat app__stat--accent">
-              Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
-            </span>
-          )}
-        </div>
+        ))}
       </section>
 
-      <nav className="app__view-selector" aria-label="Vista activa del grafo">
-        <button
-          type="button"
-          className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('current')}
-        >
-          Proyecto actual
-        </button>
-        <button
-          type="button"
-          className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('target')}
-          disabled={!targetPackage}
-        >
-          Migración objetivo
-        </button>
-        <button
-          type="button"
-          className={`app__view ${activeView === 'scenario' ? 'app__view--active' : ''}`}
-          onClick={() => setActiveView('scenario')}
-          disabled={!scenarioPackage}
-        >
-          Escenario what-if
-        </button>
-      </nav>
+      <section className="app__canvas">
+        {activeZone === 'analysis' && (
+          <div className="app__panel app__panel--analysis">
+            <div className="app__panel-header">
+              <h2>Análisis de package.json</h2>
+              <p>Introduce un manifiesto y genera automáticamente árbol, grafo e incidencias priorizadas.</p>
+            </div>
+            <div className="app__panel-actions">
+              <div className="app__analysis-settings">
+                <div className="app__switch">
+                  <label htmlFor="analysis-dev-toggle">
+                    <input
+                      id="analysis-dev-toggle"
+                      type="checkbox"
+                      checked={analysisIncludeDev}
+                      onChange={(event) => {
+                        setAnalysisIncludeDev(event.target.checked);
+                        setAnalysisPendingChanges(true);
+                      }}
+                    />
+                    Incluir devDependencies ({analysisDevDependenciesCount})
+                  </label>
+                </div>
+                <div className="app__stats" aria-live="polite">
+                  <span className="app__stat">Dependencias: {analysisDependenciesCount}</span>
+                  <span className="app__stat">Dev: {analysisDevDependenciesCount}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="app__analyze"
+                onClick={handleAnalyzePackage}
+                disabled={analysisLoading}
+              >
+                {analysisLoading && <span className="app__button-spinner" aria-hidden="true" />}
+                <span>{analysisLoading ? 'Analizando...' : 'Analizar package.json'}</span>
+              </button>
+            </div>
+            <div className="app__analysis-feedback" role="status" aria-live="polite">
+              {analysisMessage()}
+            </div>
+            <div className="app__inputs">
+              <FileUploader
+                id="analysis-package"
+                title="Package.json a analizar"
+                description="Sube o pega el manifiesto que quieres inspeccionar. Puedes editarlo directamente antes de ejecutar el análisis."
+                onPackageChange={handleAnalysisPackageChange}
+                onError={handleAnalysisError}
+                defaultValue={serializedAnalysis}
+                actionLabel="Seleccionar package.json"
+              />
+            </div>
+            <DependencyTree
+              data={analysisResult}
+              loading={analysisLoading}
+              error={analysisError}
+              hasPendingChanges={analysisPendingChanges}
+            />
+          </div>
+        )}
 
-      <div className="app__inputs">
-        <FileUploader
-          id="current-package"
-          title="1. Paquete actual"
-          description="Sube o pega el package.json instalado en tu entorno actual. Usa este punto de partida como base para cualquier comparación."
-          onPackageChange={handleCurrentPackageChange}
-          onError={handleError}
-          defaultValue={serializedCurrent}
-          actionLabel="Seleccionar package.json actual"
-        />
-        <FileUploader
-          id="target-package"
-          title="2. Paquete objetivo"
-          description="Carga la versión candidata a producción para comparar su árbol de dependencias con el proyecto actual."
-          onPackageChange={handleTargetPackageChange}
-          onError={handleError}
-          defaultValue={serializedTarget}
-          actionLabel="Seleccionar package.json objetivo"
-        />
-      </div>
-
-      <ScenarioEditor
-        basePackage={targetPackage}
-        value={scenarioPackage}
-        onChange={handleScenarioChange}
-        onReset={handleScenarioReset}
-        disabled={!targetPackage}
-      />
-
-      <DependencyTree
-        data={activeResult}
-        loading={loading}
-        error={errorMessage}
-        hasPendingChanges={hasPendingChanges}
-      />
+        {activeZone === 'comparison' && (
+          <div className="app__panel app__panel--comparison">
+            <div className="app__panel-header">
+              <h2>Comparador de dependencias</h2>
+              <p>Explora el árbol y grafo generados para cada manifiesto y revisa diferencias clave.</p>
+            </div>
+            <div className="app__panel-actions">
+              <div className="app__analysis-settings">
+                <div className="app__switch">
+                  <label htmlFor="comparison-dev-toggle">
+                    <input
+                      id="comparison-dev-toggle"
+                      type="checkbox"
+                      checked={comparisonIncludeDev}
+                      onChange={(event) => {
+                        setComparisonIncludeDev(event.target.checked);
+                        setComparisonPendingChanges(true);
+                      }}
+                    />
+                    Incluir devDependencies
+                  </label>
+                </div>
+                <div className="app__stats" aria-live="polite">
+                  <span className="app__stat">Dependencias: {comparisonDependenciesCount}</span>
+                  <span className="app__stat">Dev: {comparisonDevDependenciesCount}</span>
+                  {dependencyDiff && (
+                    <span className="app__stat app__stat--accent">
+                      Δ deps: +{dependencyDiff.added} / −{dependencyDiff.removed} / ⚙︎ {dependencyDiff.changed}
+                    </span>
+                  )}
+                  {issueDiff && (
+                    <span className="app__stat app__stat--accent">
+                      Δ incidencias: −{issueDiff.resolved} / +{issueDiff.introduced}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="app__analyze"
+                onClick={handleComparePackages}
+                disabled={comparisonLoading}
+              >
+                {comparisonLoading && <span className="app__button-spinner" aria-hidden="true" />}
+                <span>{comparisonLoading ? 'Comparando...' : 'Analizar manifiestos'}</span>
+              </button>
+            </div>
+            <div className="app__analysis-feedback" role="status" aria-live="polite">
+              {comparisonMessage()}
+            </div>
+            <div className="app__inputs">
+              <FileUploader
+                id="current-package"
+                title="1. Paquete base"
+                description="Sube o pega el package.json instalado en tu entorno actual."
+                onPackageChange={handleCurrentPackageChange}
+                onError={handleComparisonError}
+                defaultValue={serializedCurrent}
+                actionLabel="Seleccionar package.json base"
+              />
+              <FileUploader
+                id="target-package"
+                title="2. Paquete objetivo"
+                description="Carga la versión candidata para comparar su árbol de dependencias contra el paquete base."
+                onPackageChange={handleTargetPackageChange}
+                onError={handleComparisonError}
+                defaultValue={serializedTarget}
+                actionLabel="Seleccionar package.json objetivo"
+              />
+            </div>
+            <div className="app__comparison-toolbar">
+              <nav className="app__view-selector" aria-label="Vista activa del comparador">
+                <button
+                  type="button"
+                  className={`app__view ${activeView === 'current' ? 'app__view--active' : ''}`}
+                  onClick={() => setActiveView('current')}
+                >
+                  Paquete base
+                </button>
+                <button
+                  type="button"
+                  className={`app__view ${activeView === 'target' ? 'app__view--active' : ''}`}
+                  onClick={() => setActiveView('target')}
+                  disabled={!targetPackage}
+                >
+                  Paquete objetivo
+                </button>
+              </nav>
+            </div>
+            <DependencyTree
+              data={activeView === 'current' ? comparisonResults.current : comparisonResults.target}
+              loading={comparisonLoading}
+              error={comparisonError}
+              hasPendingChanges={comparisonPendingChanges}
+            />
+          </div>
+        )}
+      </section>
     </main>
   );
 }

@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DependencyGraphResult, DependencyNode } from './VersionResolver';
-import { formatVersionLabel, summarizeIssues, VersionIssue } from '../utils/semverUtils';
+import {
+  formatVersionLabel,
+  summarizeIssues,
+  VersionIssue,
+  VersionIssueType,
+} from '../utils/semverUtils';
 
 import './DependencyTree.css';
 
@@ -13,6 +18,36 @@ export interface DependencyTreeProps {
 }
 
 type ViewMode = 'tree' | 'graph';
+
+const ISSUE_TYPES = ['vulnerable', 'conflict', 'outdated', 'duplicate'] as const;
+
+type IssueFilterType = typeof ISSUE_TYPES[number];
+
+interface IssuePanelEntry {
+  node: DependencyNode;
+  issue: VersionIssue & { type: IssueFilterType };
+  nodeKey: string;
+  priority: number;
+}
+
+const ISSUE_LABELS: Record<IssueFilterType, string> = {
+  vulnerable: 'Vulnerabilidades',
+  conflict: 'Conflictos',
+  outdated: 'Desactualizadas',
+  duplicate: 'Duplicadas',
+};
+
+const ISSUE_PRIORITY: Record<IssueFilterType, number> = {
+  vulnerable: 0,
+  conflict: 1,
+  outdated: 2,
+  duplicate: 3,
+};
+
+const createNodeKey = (nodeId: string): string => nodeId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+const isPanelIssueType = (type: VersionIssueType): type is IssueFilterType =>
+  ISSUE_TYPES.includes(type as IssueFilterType);
 
 type GraphViewBox = {
   x: number;
@@ -178,7 +213,11 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     textMuted: '#475569',
     edge: '#94a3b8',
   });
+  const [activeIssueFilters, setActiveIssueFilters] = useState<IssueFilterType[]>([]);
   const [viewBox, setViewBox] = useState<GraphViewBox>({ x: 0, y: 0, width: 960, height: 520 });
+
+  const activeFilterSet = useMemo(() => new Set(activeIssueFilters), [activeIssueFilters]);
+  const hasActiveFilters = activeIssueFilters.length > 0;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -195,8 +234,53 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     return [base, ...dynamicClasses].join(' ');
   };
 
+  const filteredTree = useMemo<DependencyNode[]>(() => {
+    if (!data?.tree) {
+      return [];
+    }
+    if (!hasActiveFilters) {
+      return data.tree;
+    }
+    const filterSet = new Set(activeIssueFilters);
+
+    const filterNode = (node: DependencyNode): DependencyNode | null => {
+      const filteredChildren = node.children
+        .map(filterNode)
+        .filter(Boolean) as DependencyNode[];
+
+      const matchesNode = node.issues.some(
+        (issue) => isPanelIssueType(issue.type) && filterSet.has(issue.type),
+      );
+
+      if (matchesNode || filteredChildren.length > 0) {
+        return { ...node, children: filteredChildren };
+      }
+
+      return null;
+    };
+
+    return data.tree.map(filterNode).filter(Boolean) as DependencyNode[];
+  }, [activeIssueFilters, data, hasActiveFilters]);
+
+  const hasAnyNodes = Boolean(data?.tree?.length);
+  const hasVisibleNodes = filteredTree.length > 0;
+
+  const visibleNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    const visit = (nodes: DependencyNode[]) => {
+      nodes.forEach((node) => {
+        ids.add(node.nodeId);
+        if (node.children.length) {
+          visit(node.children);
+        }
+      });
+    };
+    visit(filteredTree);
+    return ids;
+  }, [filteredTree]);
+
   const layout = useMemo<GraphLayout>(() => {
-    if (!data?.tree?.length) {
+    if (!filteredTree.length) {
       return { nodes: [], width: 960, height: 520 };
     }
 
@@ -224,7 +308,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
       node.children.forEach((child) => visit(child, level + 1));
     };
 
-    data.tree.forEach((node) => visit(node, 0));
+    filteredTree.forEach((node) => visit(node, 0));
 
     if (!rawNodes.length) {
       return { nodes: [], width: 960, height: 520 };
@@ -270,11 +354,145 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
       width,
       height,
     };
-  }, [data]);
+  }, [filteredTree]);
 
   const nodePositionMap = useMemo(() => new Map(layout.nodes.map((node) => [node.id, node])), [layout.nodes]);
-  const edges = useMemo(() => data?.edges ?? [], [data]);
+  const edges = useMemo(
+    () =>
+      (data?.edges ?? []).filter(
+        (edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to),
+      ),
+    [data?.edges, visibleNodeIds],
+  );
   const graphReady = layout.nodes.length > 0 && !loading && !error;
+
+  const flattenedNodes = useMemo(() => {
+    if (!data?.tree) {
+      return [] as DependencyNode[];
+    }
+    const nodes: DependencyNode[] = [];
+    const visit = (items: DependencyNode[]) => {
+      items.forEach((node) => {
+        nodes.push(node);
+        if (node.children.length) {
+          visit(node.children);
+        }
+      });
+    };
+    visit(data.tree);
+    return nodes;
+  }, [data]);
+
+  const issueCounts = useMemo(() => {
+    const counts = ISSUE_TYPES.reduce<Record<IssueFilterType, number>>((acc, type) => {
+      acc[type] = 0;
+      return acc;
+    }, {} as Record<IssueFilterType, number>);
+
+    flattenedNodes.forEach((node) => {
+      node.issues.forEach((issue) => {
+        if (isPanelIssueType(issue.type)) {
+          counts[issue.type] += 1;
+        }
+      });
+    });
+
+    return counts;
+  }, [flattenedNodes]);
+
+  const issuePanelItems = useMemo(() => {
+    const items: IssuePanelEntry[] = [];
+    if (!flattenedNodes.length) {
+      return items;
+    }
+    const filterSet = new Set<IssueFilterType>(activeIssueFilters);
+
+    flattenedNodes.forEach((node) => {
+      node.issues.forEach((issue) => {
+        if (!isPanelIssueType(issue.type)) {
+          return;
+        }
+        if (filterSet.size > 0 && !filterSet.has(issue.type)) {
+          return;
+        }
+
+        items.push({
+          node,
+          issue: { ...issue, type: issue.type as IssueFilterType },
+          nodeKey: createNodeKey(node.nodeId),
+          priority: ISSUE_PRIORITY[issue.type],
+        });
+      });
+    });
+
+    items.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      if (a.node.name !== b.node.name) {
+        return a.node.name.localeCompare(b.node.name);
+      }
+      return a.issue.message.localeCompare(b.issue.message);
+    });
+
+    return items;
+  }, [activeIssueFilters, flattenedNodes]);
+
+  const toggleIssueFilter = useCallback((type: IssueFilterType) => {
+    setActiveIssueFilters((previous) =>
+      previous.includes(type)
+        ? previous.filter((item) => item !== type)
+        : [...previous, type],
+    );
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setActiveIssueFilters([]);
+  }, []);
+
+  const focusNode = useCallback(
+    (targetView: ViewMode, nodeId: string) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      const nodeKey = createNodeKey(nodeId);
+      setViewMode(targetView);
+
+      window.requestAnimationFrame(() => {
+        const attemptFocus = (iteration: number) => {
+          const selector = `[data-view="${targetView}"][data-node-key="${nodeKey}"]`;
+          const element = document.querySelector<HTMLElement | SVGElement>(selector);
+          if (element) {
+            if (targetView === 'tree' && 'scrollIntoView' in element) {
+              (element as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            if ('focus' in element && typeof element.focus === 'function') {
+              if (element instanceof HTMLElement) {
+                element.focus({ preventScroll: targetView === 'tree' });
+              } else {
+                element.focus();
+              }
+            }
+            if (targetView === 'graph') {
+              setTooltip(null);
+            }
+            return;
+          }
+          if (iteration < 5) {
+            window.setTimeout(() => attemptFocus(iteration + 1), 90);
+          }
+        };
+
+        attemptFocus(0);
+      });
+    },
+    [setTooltip, setViewMode],
+  );
+
+  const handleIssueNavigation = useCallback(
+    (targetView: ViewMode, nodeId: string) => () => focusNode(targetView, nodeId),
+    [focusNode],
+  );
 
   useEffect(() => {
     if (viewMode !== 'graph') {
@@ -592,11 +810,17 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     }
     return (
       <ul className="issues">
-        {issues.map((issue) => (
-          <li key={`${issue.type}-${issue.message}`} className={`issues__item issues__item--${issue.type}`}>
-            {issue.message}
-          </li>
-        ))}
+        {issues.map((issue) => {
+          const highlight = hasActiveFilters && isPanelIssueType(issue.type) && activeFilterSet.has(issue.type);
+          const itemClassName = composeClassName(`issues__item issues__item--${issue.type}`, {
+            'issues__item--highlight': highlight,
+          });
+          return (
+            <li key={`${issue.type}-${issue.message}`} className={itemClassName}>
+              {issue.message}
+            </li>
+          );
+        })}
       </ul>
     );
   };
@@ -608,6 +832,10 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     const isDuplicate = node.issues.some((issue) => issue.type === 'duplicate');
     const isConflict = node.issues.some((issue) => issue.type === 'conflict');
     const isVulnerable = node.issues.some((issue) => issue.type === 'vulnerable');
+    const nodeKey = createNodeKey(node.nodeId);
+    const matchesActiveFilter =
+      hasActiveFilters && node.issues.some((issue) => isPanelIssueType(issue.type) && activeFilterSet.has(issue.type));
+    const isContextNode = hasActiveFilters && !matchesActiveFilter;
 
     return (
       <li key={path} className="tree-node">
@@ -617,8 +845,13 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
             'tree-node__card--duplicate': isDuplicate,
             'tree-node__card--conflict': isConflict,
             'tree-node__card--vulnerable': isVulnerable,
+            'tree-node__card--highlight': matchesActiveFilter,
+            'tree-node__card--context': isContextNode,
           })}
           title={summarizeIssues(node.issues)}
+          data-node-key={nodeKey}
+          data-view="tree"
+          tabIndex={-1}
         >
           <div className="tree-node__header">
             <span className="tree-node__name" title={node.name}>
@@ -651,8 +884,8 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     <section className="dependency-tree">
       <header className="dependency-tree__header">
         <div>
-          <h2>2. Visualiza y audita tus dependencias</h2>
-          <p>Compara rangos declarados, versiones instaladas y posibles incidencias.</p>
+          <h2>Explora los resultados del análisis</h2>
+          <p>Alterna entre el árbol y el grafo para revisar versiones, incidencias y exportar reportes.</p>
         </div>
         <div className="dependency-tree__controls">
           <div className="dependency-tree__view-toggle" role="group" aria-label="Cambiar vista">
@@ -699,6 +932,36 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
               </div>
             )}
           </div>
+          <div className="dependency-tree__filters" role="group" aria-label="Filtrar incidencias">
+            {ISSUE_TYPES.map((type) => {
+              const isActive = activeFilterSet.has(type);
+              const count = issueCounts[type];
+              const chipClassName = composeClassName('dependency-tree__filter-chip', {
+                'dependency-tree__filter-chip--active': isActive,
+                'dependency-tree__filter-chip--disabled': count === 0 && !isActive,
+              });
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  className={chipClassName}
+                  onClick={() => toggleIssueFilter(type)}
+                  aria-pressed={isActive}
+                  aria-label={`${ISSUE_LABELS[type]} (${count})`}
+                  disabled={count === 0 && !isActive}
+                >
+                  <span className={`dependency-tree__filter-dot dependency-tree__filter-dot--${type}`} aria-hidden="true" />
+                  <span className="dependency-tree__filter-label">{ISSUE_LABELS[type]}</span>
+                  <span className="dependency-tree__filter-count">{count}</span>
+                </button>
+              );
+            })}
+            {hasActiveFilters && (
+              <button type="button" className="dependency-tree__filter-reset" onClick={clearFilters}>
+                Limpiar filtros
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -731,137 +994,229 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
         </p>
       )}
 
-      {!loading && !error && data && data.tree.length === 0 && !hasPendingChanges && (
-        <p className="dependency-tree__status">Añade dependencias para visualizar el grafo.</p>
-      )}
-
-      {!loading && !error && data && data.tree.length > 0 && (
-        <>
-          {viewMode === 'tree' && (
-            <ol className="tree-root">
-              {data.tree.map((node, index) => renderNode(node, `${node.nodeId}-${index}`))}
-            </ol>
-          )}
-
-          <div
-            className={composeClassName('graph-view', {
-              'graph-view--panning': isPanning,
-              'graph-view--hidden': viewMode !== 'graph',
-            })}
-            role="img"
-            aria-label="Grafo de dependencias"
-            aria-hidden={viewMode !== 'graph'}
-            ref={containerRef}
-          >
-            <svg
-              ref={svgRef}
-              width="100%"
-              height="100%"
-              viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-              preserveAspectRatio="xMidYMid meet"
-              onWheel={handleWheel}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              onPointerLeave={handlePointerLeave}
-            >
-              <defs>
-                <marker id="graph-arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill={graphTheme.edge} />
-                </marker>
-              </defs>
-              {edges.map((edge, index) => {
-                const from = nodePositionMap.get(edge.from);
-                const to = nodePositionMap.get(edge.to);
-                if (!from || !to) {
-                  return null;
-                }
-                return (
-                  <line
-                    key={`${edge.from}-${edge.to}-${index}`}
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={graphTheme.edge}
-                    strokeWidth={1.6}
-                    markerEnd="url(#graph-arrow)"
-                    vectorEffect="non-scaling-stroke"
-                  >
-                    <title>{`${edge.fromLabel} → ${edge.toLabel}`}</title>
-                  </line>
-                );
-              })}
-              {layout.nodes.map((node, index) => {
-                const hasIssues = node.issues.length > 0;
-                const fillColor = hasIssues ? graphTheme.nodeWarningFill : graphTheme.nodeFill;
-                return (
-                  <g
-                    key={`${node.id}-${index}`}
-                    className="graph-node"
-                    tabIndex={0}
-                    role="group"
-                    aria-label={`${node.label}. ${summarizeIssues(node.issues) || 'Sin incidencias detectadas.'}`}
-                    onPointerEnter={handleNodePointerEnter(node)}
-                    onPointerMove={handleNodePointerMove(node)}
-                    onPointerLeave={handleNodePointerLeave}
-                    onFocus={handleNodeFocus(node)}
-                    onBlur={handleNodeBlur}
-                  >
-                    <circle cx={node.x} cy={node.y} r={32} fill={fillColor} fillOpacity={0.9} />
-                    <text x={node.x} y={node.y - 44} fill={graphTheme.textPrimary} className="graph-node__title">
-                      {node.label}
-                    </text>
-                    <text x={node.x} y={node.y - 18} fill={graphTheme.textMuted} className="graph-node__version">
-                      {node.declaredRange}
-                    </text>
-                    <text x={node.x} y={node.y + 8} fill={graphTheme.textPrimary} className="graph-node__version">
-                      {formatVersionLabel(node.resolvedVersion, node.latestVersion)}
-                    </text>
-                    <title>{`Declarado: ${node.declaredRange}\n${formatVersionLabel(node.resolvedVersion, node.latestVersion)}`}</title>
-                  </g>
-                );
-              })}
-            </svg>
-            {viewMode === 'graph' && tooltip && (
-              <div
-                className="graph-tooltip"
-                style={{ left: `${tooltip.position.x}px`, top: `${tooltip.position.y}px` }}
-                role="status"
-                aria-live="polite"
-              >
-                <h3>{tooltip.node.label}</h3>
-                <div className="graph-tooltip__meta">
-                  <span>
-                    <strong>Declarado:</strong> {tooltip.node.declaredRange}
-                  </span>
-                  <span>
-                    <strong>Instalado:</strong> {formatVersionLabel(tooltip.node.resolvedVersion, tooltip.node.latestVersion)}
-                  </span>
-                  {tooltip.node.latestVersion && (
-                    <span>
-                      <strong>Última:</strong> {tooltip.node.latestVersion}
-                    </span>
-                  )}
-                  <span>{tooltip.node.rangeDescription}</span>
-                </div>
-                {!!tooltip.node.issues.length && (
-                  <div className="graph-tooltip__issues">
-                    {tooltip.node.issues.map((issue) => (
-                      <span
-                        key={`${issue.type}-${issue.message}`}
-                        className={`graph-tooltip__issue ${getTooltipIssueClass(issue.type)}`}
-                      >
-                        {issue.message}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {!loading && !error && data && (
+        <div className="dependency-tree__content">
+          <div className="dependency-tree__visualization">
+            {viewMode === 'tree' && (
+              hasAnyNodes ? (
+                hasVisibleNodes ? (
+                  <ol className="tree-root">
+                    {filteredTree.map((node, index) => renderNode(node, `${node.nodeId}-${index}`))}
+                  </ol>
+                ) : (
+                  <p className="dependency-tree__status dependency-tree__status--info">
+                    {hasActiveFilters
+                      ? 'No hay nodos que coincidan con los filtros seleccionados.'
+                      : 'Añade dependencias para visualizar el grafo.'}
+                  </p>
+                )
+              ) : (
+                <p className="dependency-tree__status">Añade dependencias para visualizar el grafo.</p>
+              )
             )}
+
+            <div
+              className={composeClassName('graph-view', {
+                'graph-view--panning': isPanning,
+                'graph-view--hidden': viewMode !== 'graph',
+              })}
+              role="img"
+              aria-label="Grafo de dependencias"
+              aria-hidden={viewMode !== 'graph'}
+              ref={containerRef}
+            >
+              <svg
+                ref={svgRef}
+                width="100%"
+                height="100%"
+                viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+                preserveAspectRatio="xMidYMid meet"
+                onWheel={handleWheel}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onPointerLeave={handlePointerLeave}
+              >
+                <defs>
+                  <marker id="graph-arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L9,3 z" fill={graphTheme.edge} />
+                  </marker>
+                </defs>
+                {edges.map((edge, index) => {
+                  const from = nodePositionMap.get(edge.from);
+                  const to = nodePositionMap.get(edge.to);
+                  if (!from || !to) {
+                    return null;
+                  }
+                  return (
+                    <line
+                      key={`${edge.from}-${edge.to}-${index}`}
+                      x1={from.x}
+                      y1={from.y}
+                      x2={to.x}
+                      y2={to.y}
+                      stroke={graphTheme.edge}
+                      strokeWidth={1.6}
+                      markerEnd="url(#graph-arrow)"
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      <title>{`${edge.fromLabel} → ${edge.toLabel}`}</title>
+                    </line>
+                  );
+                })}
+                {layout.nodes.map((node, index) => {
+                  const nodeKey = createNodeKey(node.id);
+                  const hasIssues = node.issues.length > 0;
+                  const matchesFilter =
+                    hasActiveFilters &&
+                    node.issues.some((issue) => isPanelIssueType(issue.type) && activeFilterSet.has(issue.type));
+                  const isContextNode = hasActiveFilters && !matchesFilter;
+                  const fillColor = hasIssues ? graphTheme.nodeWarningFill : graphTheme.nodeFill;
+                  const nodeClassName = composeClassName('graph-node', {
+                    'graph-node--highlight': matchesFilter,
+                    'graph-node--context': isContextNode,
+                  });
+                  return (
+                    <g
+                      key={`${node.id}-${index}`}
+                      className={nodeClassName}
+                      tabIndex={0}
+                      role="group"
+                      data-node-key={nodeKey}
+                      data-view="graph"
+                      aria-label={`${node.label}. ${summarizeIssues(node.issues) || 'Sin incidencias detectadas.'}`}
+                      onPointerEnter={handleNodePointerEnter(node)}
+                      onPointerMove={handleNodePointerMove(node)}
+                      onPointerLeave={handleNodePointerLeave}
+                      onFocus={handleNodeFocus(node)}
+                      onBlur={handleNodeBlur}
+                    >
+                      <circle cx={node.x} cy={node.y} r={32} fill={fillColor} fillOpacity={0.9} />
+                      <text x={node.x} y={node.y - 44} fill={graphTheme.textPrimary} className="graph-node__title">
+                        {node.label}
+                      </text>
+                      <text x={node.x} y={node.y - 18} fill={graphTheme.textMuted} className="graph-node__version">
+                        {node.declaredRange}
+                      </text>
+                      <text x={node.x} y={node.y + 8} fill={graphTheme.textPrimary} className="graph-node__version">
+                        {formatVersionLabel(node.resolvedVersion, node.latestVersion)}
+                      </text>
+                      <title>{`Declarado: ${node.declaredRange}\n${formatVersionLabel(node.resolvedVersion, node.latestVersion)}`}</title>
+                    </g>
+                  );
+                })}
+              </svg>
+              {layout.nodes.length === 0 && (
+                <div className="graph-view__empty" role="status">
+                  {hasAnyNodes
+                    ? 'No hay nodos que coincidan con los filtros seleccionados.'
+                    : 'Añade dependencias para visualizar el grafo.'}
+                </div>
+              )}
+              {viewMode === 'graph' && tooltip && (
+                <div
+                  className="graph-tooltip"
+                  style={{ left: `${tooltip.position.x}px`, top: `${tooltip.position.y}px` }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <h3>{tooltip.node.label}</h3>
+                  <div className="graph-tooltip__meta">
+                    <span>
+                      <strong>Declarado:</strong> {tooltip.node.declaredRange}
+                    </span>
+                    <span>
+                      <strong>Instalado:</strong> {formatVersionLabel(tooltip.node.resolvedVersion, tooltip.node.latestVersion)}
+                    </span>
+                    {tooltip.node.latestVersion && (
+                      <span>
+                        <strong>Última:</strong> {tooltip.node.latestVersion}
+                      </span>
+                    )}
+                    <span>{tooltip.node.rangeDescription}</span>
+                  </div>
+                  {!!tooltip.node.issues.length && (
+                    <div className="graph-tooltip__issues">
+                      {tooltip.node.issues.map((issue) => (
+                        <span
+                          key={`${issue.type}-${issue.message}`}
+                          className={`graph-tooltip__issue ${getTooltipIssueClass(issue.type)}`}
+                        >
+                          {issue.message}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </>
+
+          <aside className="dependency-tree__panel">
+            <div className="dependency-tree__panel-header">
+              <h3>Incidencias detectadas</h3>
+              <p>Ordenadas por criticidad: vulnerables, conflictos, desactualizadas y duplicadas.</p>
+            </div>
+            <div className="dependency-tree__panel-filters" role="status" aria-live="polite">
+              <span>Total incidencias: {issuePanelItems.length}</span>
+            </div>
+            <div className="dependency-tree__issue-list">
+              {issuePanelItems.length > 0 ? (
+                issuePanelItems.map((item) => (
+                  <article
+                    key={`${item.node.nodeId}-${item.issue.type}-${item.issue.message}`}
+                    className="dependency-tree__issue-card"
+                    data-issue-type={item.issue.type}
+                    title={summarizeIssues(item.node.issues)}
+                  >
+                    <header className="dependency-tree__issue-header">
+                      <h4 title={item.node.name}>{item.node.name}</h4>
+                      <span className="dependency-tree__issue-type">{ISSUE_LABELS[item.issue.type]}</span>
+                    </header>
+                    <p className="dependency-tree__issue-message">{item.issue.message}</p>
+                    <dl className="dependency-tree__issue-meta">
+                      <div>
+                        <dt>Declarado</dt>
+                        <dd>{item.node.declaredRange}</dd>
+                      </div>
+                      <div>
+                        <dt>Instalado</dt>
+                        <dd>{formatVersionLabel(item.node.resolvedVersion, item.node.latestVersion)}</dd>
+                      </div>
+                    </dl>
+                    <div className="dependency-tree__issue-actions">
+                      <button
+                        type="button"
+                        className="dependency-tree__issue-link"
+                        onClick={handleIssueNavigation('tree', item.node.nodeId)}
+                        title="Ir al nodo en la vista árbol"
+                        aria-label={`Ver ${item.node.name} en la vista árbol. ${summarizeIssues(item.node.issues)}`}
+                      >
+                        Ver en árbol
+                      </button>
+                      <button
+                        type="button"
+                        className="dependency-tree__issue-link dependency-tree__issue-link--graph"
+                        onClick={handleIssueNavigation('graph', item.node.nodeId)}
+                        title="Ir al nodo en la vista grafo"
+                        aria-label={`Ver ${item.node.name} en la vista grafo. ${summarizeIssues(item.node.issues)}`}
+                      >
+                        Ver en grafo
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="dependency-tree__panel-empty">
+                  {hasActiveFilters
+                    ? 'Sin incidencias para los filtros seleccionados.'
+                    : 'No se encontraron incidencias en el análisis actual.'}
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
       )}
     </section>
   );
