@@ -1,33 +1,27 @@
-:root {
-  color-scheme: light;
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-  background: #eef2ff;
-  min-height: 100%;
-}
-
-body {
-  margin: 0;
-  background: #eef2ff;
-}
-
 .app {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  padding: clamp(2rem, 4vw, 3.5rem) 1.5rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 2rem;
 }
 
+.app__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .app__header h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3rem);
-  color: #1d4ed8;
+  color: var(--color-primary-strong);
 }
 
 .app__subtitle {
   margin: 0.75rem 0 0;
-  color: #475569;
+  color: var(--color-text-muted);
   max-width: 48ch;
 }
 
@@ -52,12 +46,12 @@ body {
   align-items: center;
   gap: 0.6rem;
   font-weight: 600;
-  color: #1d4ed8;
-  background: white;
+  color: var(--color-primary-strong);
+  background: var(--color-surface);
   border-radius: 999px;
   padding: 0.5rem 1rem;
-  border: 1px solid rgba(29, 78, 216, 0.25);
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.12);
+  border: 1px solid var(--color-primary-soft);
+  box-shadow: var(--shadow-xs);
 }
 
 .app__switch input[type='checkbox'] {
@@ -72,8 +66,8 @@ body {
 }
 
 .app__stat {
-  background: rgba(79, 70, 229, 0.12);
-  color: #312e81;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
   border-radius: 999px;
   padding: 0.4rem 1rem;
   font-weight: 600;

@@ -49,6 +49,29 @@ function App(): JSX.Element {
 
   const serializedDefault = useMemo(() => JSON.stringify(DEFAULT_PACKAGE, null, 2), []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyTheme = (isDark: boolean) => {
+      root.dataset.theme = isDark ? 'dark' : 'light';
+    };
+
+    applyTheme(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      applyTheme(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
+
   const handlePackageChange = useCallback(
     (data: Record<string, unknown>) => {
       try {
