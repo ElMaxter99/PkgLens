@@ -67,23 +67,107 @@
   display: none;
 }
 
+.uploader__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.uploader__history-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.uploader__history-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+@media (min-width: 640px) {
+  .uploader__history-controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+  }
+}
+
+.uploader__history-select {
+  flex: 1;
+  min-width: 220px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.uploader__editor {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 1px 4px rgba(62, 107, 255, 0.08);
+}
+
+.uploader__editor:focus-within {
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
+.uploader__editor--error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px var(--color-danger-soft);
+}
+
+.uploader__overlay {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 1rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+  color: transparent;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.uploader__overlay-line {
+  min-height: 1.5em;
+}
+
+.uploader__overlay-line--error {
+  background: var(--color-danger-soft);
+  border-radius: 6px;
+}
+
 .uploader__textarea {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 240px;
   font-family: var(--font-family-mono);
   font-size: 0.95rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  border: none;
   padding: 1rem;
   resize: vertical;
   line-height: 1.5;
-  background: var(--color-surface);
+  background: transparent;
   color: var(--color-text-primary);
-  box-shadow: inset 0 1px 4px rgba(62, 107, 255, 0.08);
   white-space: pre;
 }
 
 .uploader__textarea:focus {
-  outline: 3px solid transparent;
-  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  outline: none;
+}
+
+.uploader__error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.9rem;
 }
