@@ -9,6 +9,7 @@ export interface DependencyTreeProps {
   data: DependencyGraphResult | null;
   loading?: boolean;
   error?: string | null;
+  hasPendingChanges?: boolean;
 }
 
 type ViewMode = 'tree' | 'graph';
@@ -160,7 +161,12 @@ const dataUrlToUint8Array = (dataUrl: string): Uint8Array => {
   return bytes;
 };
 
-export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, error }) => {
+export const DependencyTree: React.FC<DependencyTreeProps> = ({
+  data,
+  loading,
+  error,
+  hasPendingChanges = false,
+}) => {
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -709,7 +715,19 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({ data, loading, e
       )}
       {error && !loading && <p className="dependency-tree__status dependency-tree__status--error">{error}</p>}
 
-      {!loading && !error && data && data.tree.length === 0 && (
+      {!loading && !error && !data && (
+        <p className="dependency-tree__status dependency-tree__status--info">
+          Ejecuta un análisis para visualizar tus dependencias.
+        </p>
+      )}
+
+      {!loading && !error && data && hasPendingChanges && (
+        <p className="dependency-tree__status dependency-tree__status--pending">
+          Los datos mostrados provienen de un análisis anterior. Ejecuta el análisis nuevamente para actualizarlos.
+        </p>
+      )}
+
+      {!loading && !error && data && data.tree.length === 0 && !hasPendingChanges && (
         <p className="dependency-tree__status">Añade dependencias para visualizar el grafo.</p>
       )}
 

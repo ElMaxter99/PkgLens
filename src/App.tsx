@@ -65,6 +65,7 @@ function App(): JSX.Element {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [includeDevDependencies, setIncludeDevDependencies] = useState<boolean>(false);
+  const [hasPendingChanges, setHasPendingChanges] = useState<boolean>(true);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const stored = readStoredTheme();
     return stored ?? detectSystemTheme();
@@ -116,10 +117,12 @@ function App(): JSX.Element {
         const normalized = normalizePackageDefinition(data);
         setPackageDefinition(normalized);
         setErrorMessage(null);
+        setHasPendingChanges(true);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Ocurrió un problema al interpretar el package.json proporcionado.';
         setErrorMessage(message);
+        setHasPendingChanges(true);
       }
     },
     [setPackageDefinition],
@@ -139,42 +142,31 @@ function App(): JSX.Element {
     setTheme(detectSystemTheme());
   }, []);
 
-  useEffect(() => {
-    let isActive = true;
-    const timeout = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const options: ResolveOptions = {
-          includeDev: includeDevDependencies,
-        };
-        const result = await resolvePackageGraph(packageDefinition, options);
-        if (!isActive) {
-          return;
-        }
-        setAnalysisResult(result);
-        setErrorMessage(null);
-      } catch (error) {
-        if (!isActive) {
-          return;
-        }
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'No se pudieron resolver las dependencias. Verifica tu conexión y vuelve a intentarlo.';
-        setErrorMessage(message);
-        setAnalysisResult(null);
-      } finally {
-        if (isActive) {
-          setLoading(false);
-        }
-      }
-    }, 400);
-
-    return () => {
-      isActive = false;
-      clearTimeout(timeout);
-    };
-  }, [packageDefinition, includeDevDependencies]);
+  const handleAnalyze = useCallback(async () => {
+    if (loading) {
+      return;
+    }
+    setHasPendingChanges(false);
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const options: ResolveOptions = {
+        includeDev: includeDevDependencies,
+      };
+      const result = await resolvePackageGraph(packageDefinition, options);
+      setAnalysisResult(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudieron resolver las dependencias. Verifica tu conexión y vuelve a intentarlo.';
+      setErrorMessage(message);
+      setAnalysisResult(null);
+      setHasPendingChanges(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [includeDevDependencies, loading, packageDefinition]);
 
   const dependenciesCount = useMemo(() => Object.keys(packageDefinition.dependencies ?? {}).length, [packageDefinition]);
   const devDependenciesCount = useMemo(
@@ -222,10 +214,31 @@ function App(): JSX.Element {
               id="toggle-dev"
               type="checkbox"
               checked={includeDevDependencies}
-              onChange={(event) => setIncludeDevDependencies(event.target.checked)}
+              onChange={(event) => {
+                setIncludeDevDependencies(event.target.checked);
+                setHasPendingChanges(true);
+              }}
             />
             Incluir devDependencies ({devDependenciesCount})
           </label>
+        </div>
+        <div className="app__actions">
+          <button type="button" className="app__analyze" onClick={handleAnalyze} disabled={loading}>
+            {loading ? 'Analizando...' : 'Analizar dependencias'}
+          </button>
+          {!loading && hasPendingChanges && (
+            <span className="app__pending" role="status">
+              {analysisResult
+                ? 'Tienes cambios sin analizar. Ejecuta el análisis para actualizar el reporte.'
+                : 'Ejecuta el análisis para generar el grafo de dependencias.'}
+            </span>
+          )}
+          {loading && (
+            <span className="app__pending app__pending--active" role="status" aria-live="polite">
+              <span className="app__pending-spinner" aria-hidden="true" />
+              Resolviendo dependencias...
+            </span>
+          )}
         </div>
         <div className="app__stats">
           <span className="app__stat">Dependencias: {dependenciesCount}</span>
@@ -235,7 +248,12 @@ function App(): JSX.Element {
 
       <FileUploader onPackageChange={handlePackageChange} onError={handleError} defaultValue={serializedDefault} />
 
-      <DependencyTree data={analysisResult} loading={loading} error={errorMessage} />
+      <DependencyTree
+        data={analysisResult}
+        loading={loading}
+        error={errorMessage}
+        hasPendingChanges={hasPendingChanges}
+      />
     </main>
   );
 }

@@ -136,6 +136,18 @@
   color: var(--color-primary-strong);
 }
 
+.dependency-tree__status--info {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+}
+
+.dependency-tree__status--pending {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid rgba(180, 83, 9, 0.2);
+}
+
 .dependency-tree__loader {
   display: flex;
   flex-direction: column;

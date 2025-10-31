@@ -92,7 +92,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onPackageChange, onE
         <div>
           <h2>1. Sube o pega tu package.json</h2>
           <p className="uploader__hint">
-            Arrastra un archivo package.json o pega el contenido manualmente. El analizador se actualizará en tiempo real.
+            Arrastra un archivo package.json o pega el contenido manualmente. Ajusta su contenido y luego ejecuta el análisis
+            desde los controles superiores cuando estés listo.
           </p>
         </div>
         <div className="uploader__actions">
