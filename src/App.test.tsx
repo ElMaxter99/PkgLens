@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import App from './App';
 
 const mockPackage = (name: string, version: string, deps: Record<string, string> = {}) => ({
@@ -25,6 +26,8 @@ describe('App', () => {
       typescript: mockPackage('typescript', '5.6.3'),
       jest: mockPackage('jest', '29.7.0'),
       scheduler: mockPackage('scheduler', '0.25.0'),
+      zod: mockPackage('zod', '3.23.8'),
+      vitest: mockPackage('vitest', '2.1.4'),
     };
 
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
@@ -55,7 +58,8 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: /pkglens/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Incluir devDependencies/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Analizar dependencias/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(await screen.findByRole('group', { name: /Cambiar vista/i })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: /Vista activa del grafo/i })).toBeInTheDocument();
   });
 });

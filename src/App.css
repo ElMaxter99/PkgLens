@@ -197,3 +197,55 @@
   padding: 0.4rem 1rem;
   font-weight: 600;
 }
+
+.app__stat--accent {
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.app__view-selector {
+  display: inline-flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.app__view {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 0.5rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-medium), box-shadow var(--transition-medium), color var(--transition-medium);
+}
+
+.app__view:hover:not(:disabled) {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.app__view:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app__view--active {
+  background: var(--color-primary);
+  color: var(--color-text-inverted);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.app__inputs {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 960px) {
+  .app__inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

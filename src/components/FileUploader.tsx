@@ -3,12 +3,17 @@ import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
 import './FileUploader.css';
 
 export interface FileUploaderProps {
+  id: string;
+  title: string;
+  description: string;
   onPackageChange: (pkg: Record<string, unknown>) => void;
   onError: (message: string) => void;
   defaultValue?: string;
+  exampleValue?: string;
+  actionLabel?: string;
 }
 
-const EXAMPLE_PACKAGE = `{
+const DEFAULT_EXAMPLE = `{
   "name": "demo-app",
   "version": "1.0.0",
   "dependencies": {
@@ -17,8 +22,18 @@ const EXAMPLE_PACKAGE = `{
   }
 }`;
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onPackageChange, onError, defaultValue }) => {
-  const [rawText, setRawText] = useState<string>(defaultValue ?? EXAMPLE_PACKAGE);
+export const FileUploader: React.FC<FileUploaderProps> = ({
+  id,
+  title,
+  description,
+  onPackageChange,
+  onError,
+  defaultValue,
+  exampleValue,
+  actionLabel,
+}) => {
+  const resolvedExample = exampleValue ?? DEFAULT_EXAMPLE;
+  const [rawText, setRawText] = useState<string>(defaultValue ?? resolvedExample);
   const [fileName, setFileName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -77,10 +92,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onPackageChange, onE
     parseAndNotify(value);
   };
 
+  useEffect(() => {
+    if (typeof defaultValue === 'string' && defaultValue.trim().length > 0 && defaultValue !== rawText) {
+      setRawText(defaultValue);
+      parseAndNotify(defaultValue);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultValue]);
+
   const handleReset = () => {
-    setRawText(EXAMPLE_PACKAGE);
+    setRawText(resolvedExample);
     setFileName('');
-    parseAndNotify(EXAMPLE_PACKAGE);
+    parseAndNotify(resolvedExample);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -90,21 +113,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onPackageChange, onE
     <section className="uploader">
       <header className="uploader__header">
         <div>
-          <h2>1. Sube o pega tu package.json</h2>
-          <p className="uploader__hint">
-            Arrastra un archivo package.json o pega el contenido manualmente. Ajusta su contenido y luego ejecuta el análisis
-            desde los controles superiores cuando estés listo.
-          </p>
+          <h2>{title}</h2>
+          <p className="uploader__hint">{description}</p>
         </div>
         <div className="uploader__actions">
           <button type="button" className="uploader__button" onClick={handleReset}>
             Restaurar ejemplo
           </button>
-          <label className="uploader__button uploader__button--primary" htmlFor="package-file">
-            {fileName ? `Reemplazar (${fileName})` : 'Seleccionar archivo'}
+          <label className="uploader__button uploader__button--primary" htmlFor={`${id}-file`}>
+            {fileName ? `Reemplazar (${fileName})` : actionLabel ?? 'Seleccionar archivo'}
           </label>
           <input
-            id="package-file"
+            id={`${id}-file`}
             ref={fileInputRef}
             type="file"
             accept="application/json"
