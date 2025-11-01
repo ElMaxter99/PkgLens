@@ -103,6 +103,65 @@ export function describeRange(range: string): string {
   return `Rango personalizado (${normalized}).`;
 }
 
+export function buildRangeAdvice(
+  range: string,
+  resolvedVersion: string | null,
+  latestVersion: string | null,
+): VersionIssue[] {
+  const normalized = normalizeRange(range);
+  const issues: VersionIssue[] = [];
+  const preferredVersion = resolvedVersion ?? latestVersion ?? null;
+
+  if (normalized === '*') {
+    issues.push({
+      type: 'advice',
+      message: preferredVersion
+        ? `El rango abierto '*' permite cualquier versión. Cambia a ^${preferredVersion} para acotar las actualizaciones.`
+        : "El rango abierto '*' permite cualquier versión. Cambia a un rango acotado (^ o ~) para mejorar la reproducibilidad.",
+    });
+    return issues;
+  }
+
+  const normalizedVersion = semver.valid(normalized) ? normalized : null;
+
+  if (normalizedVersion && preferredVersion) {
+    issues.push({
+      type: 'advice',
+      message: `El rango fija la versión exacta ${normalizedVersion}. Cambia a ^${preferredVersion} para seguir recibiendo parches compatibles.`,
+    });
+  }
+
+  if (normalized.startsWith('~') && preferredVersion) {
+    issues.push({
+      type: 'advice',
+      message: `El rango ${normalized} solo acepta parches. Considera ^${preferredVersion} para incluir actualizaciones menores seguras.`,
+    });
+  }
+
+  if (normalized.startsWith('>=')) {
+    const minimum = normalized.replace(/^>=\s*/, '');
+    if (preferredVersion && semver.valid(minimum)) {
+      issues.push({
+        type: 'advice',
+        message: `El rango ${normalized} permite saltos mayores potencialmente incompatibles. Limita a ^${preferredVersion} para mantener estabilidad.`,
+      });
+    }
+  }
+
+  if (normalized.startsWith('^') && latestVersion && resolvedVersion && semver.valid(latestVersion) && semver.valid(resolvedVersion)) {
+    const resolvedMajor = semver.major(resolvedVersion);
+    const latestMajor = semver.major(latestVersion);
+    if (latestMajor > resolvedMajor) {
+      issues.push({
+        type: 'advice',
+        message: `Hay una nueva versión mayor disponible (${latestVersion}). Evalúa actualizar el rango a ^${latestVersion} tras revisar cambios incompatibles.`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function collectDuplicateIssues(resolvedVersions: Record<string, Set<string>>): Record<string, VersionIssue[]> {
   return Object.entries(resolvedVersions).reduce<Record<string, VersionIssue[]>>((acc, [pkg, versions]) => {
     if (versions.size > 1) {
