@@ -231,6 +231,26 @@
   color: var(--color-text-muted);
 }
 
+.dependency-tree__report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dependency-tree__report-feedback {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.dependency-tree__report-feedback--success {
+  color: var(--color-success);
+}
+
+.dependency-tree__report-feedback--error {
+  color: var(--color-danger);
+}
+
 .dependency-tree__spinner {
   width: 0.9rem;
   height: 0.9rem;
@@ -797,6 +817,174 @@
   background: var(--color-surface);
   color: var(--color-text-muted);
   font-size: 0.85rem;
+}
+
+.report-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.report-view__header h3 {
+  margin: 0;
+}
+
+.report-view__header p {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
+}
+
+.report-view__metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.report-view__metric {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.report-view__metric-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.report-view__metric-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-view__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.report-view__section h4 {
+  margin: 0;
+}
+
+.report-view__issues-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.report-view__issues-table th,
+.report-view__issues-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.report-view__issues-table thead {
+  background: var(--color-surface-alt);
+  font-weight: 600;
+}
+
+.report-view__issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.report-view__issue-list li {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  background: var(--color-surface-alt);
+  display: grid;
+  gap: 0.4rem;
+}
+
+.report-view__issue-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.report-view__issue-tag--vulnerable {
+  background: var(--color-vulnerable);
+  color: var(--color-surface);
+}
+
+.report-view__issue-tag--error {
+  background: var(--color-danger);
+  color: var(--color-surface);
+}
+
+.report-view__issue-tag--conflict {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.report-view__issue-tag--outdated {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.report-view__issue-tag--duplicate {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.report-view__issue-tag--advice {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.report-view__issue-path {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.report-view__issue-message {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.report-view__duplicate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.report-view__duplicate-list > li {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  background: var(--color-surface-alt);
+}
+
+.report-view__duplicate-list ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--color-text-muted);
+}
+
+.report-view__empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-style: italic;
 }
 
 @keyframes dependency-tree-spin {

@@ -1,4 +1,4 @@
-import { DependencyGraphResult, DependencyNode, PackageDefinition } from '../components/VersionResolver';
+import { DependencyGraphResult, DependencyNode, PackageDefinition } from '../lib/VersionResolver';
 
 type SectionKey = 'dependencies' | 'devDependencies';
 

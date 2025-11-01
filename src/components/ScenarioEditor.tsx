@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 
-import { PackageDefinition } from './VersionResolver';
+import { PackageDefinition } from '../lib/VersionResolver';
 
 import './ScenarioEditor.css';
 

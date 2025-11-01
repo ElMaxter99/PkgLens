@@ -8,8 +8,9 @@ import {
   PackageDefinition,
   resolvePackageGraph,
   ResolveOptions,
-} from './components/VersionResolver';
+} from './lib/VersionResolver';
 import { diffIssueSummary, diffPackageDependencies } from './utils/diffUtils';
+import { normalizePackageDefinition } from './utils/packageDefinition';
 
 import './App.css';
 
@@ -68,22 +69,6 @@ const detectSystemTheme = (): ThemeMode => {
   }
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
-
-function normalizePackageDefinition(input: Record<string, unknown>): PackageDefinition {
-  const dependencies = extractDependencies(input, 'dependencies');
-  const devDependencies = extractDependencies(input, 'devDependencies');
-  return { dependencies, devDependencies };
-}
-
-function extractDependencies(source: Record<string, unknown>, key: keyof PackageDefinition): Record<string, string> {
-  const value = source[key];
-  if (!value || typeof value !== 'object') {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  );
-}
 
 function App(): JSX.Element {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -439,6 +424,13 @@ function App(): JSX.Element {
               loading={analysisLoading}
               error={analysisError}
               hasPendingChanges={analysisPendingChanges}
+              reportOptions={{
+                includeDev: analysisIncludeDev,
+                includePeer: true,
+                maxDepth: 6,
+                source: 'Análisis de package.json',
+                packageName: 'analisis',
+              }}
             />
           </div>
         )}
@@ -537,6 +529,16 @@ function App(): JSX.Element {
               loading={comparisonLoading}
               error={comparisonError}
               hasPendingChanges={comparisonPendingChanges}
+              reportOptions={{
+                includeDev: comparisonIncludeDev,
+                includePeer: true,
+                maxDepth: 6,
+                source:
+                  activeView === 'current'
+                    ? 'Comparador · Paquete base'
+                    : 'Comparador · Paquete objetivo',
+                packageName: activeView === 'current' ? 'base' : 'objetivo',
+              }}
             />
           </div>
         )}

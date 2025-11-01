@@ -1,20 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { DependencyGraphResult, DependencyNode } from './VersionResolver';
+import { DependencyGraphResult, DependencyNode } from '../lib/VersionResolver';
 import {
   formatVersionLabel,
   summarizeIssues,
   VersionIssue,
   VersionIssueType,
 } from '../utils/semverUtils';
+import {
+  AnalysisReport,
+  REPORT_ISSUE_LABELS,
+  REPORT_ISSUE_TYPES,
+  ReportFormat,
+  createAnalysisReport,
+  formatAnalysisReportAsMarkdown,
+} from '../utils/reporting';
 
 import './DependencyTree.css';
+
+export interface DependencyTreeReportOptions {
+  includeDev?: boolean;
+  includePeer?: boolean;
+  maxDepth?: number;
+  source?: string;
+  packageName?: string;
+}
 
 export interface DependencyTreeProps {
   data: DependencyGraphResult | null;
   loading?: boolean;
   error?: string | null;
   hasPendingChanges?: boolean;
+  reportOptions?: DependencyTreeReportOptions;
 }
 
 type ViewMode = 'tree' | 'graph';
@@ -48,6 +65,27 @@ const ISSUE_PRIORITY: Record<IssueFilterType, number> = {
 };
 
 const createNodeKey = (nodeId: string): string => nodeId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+const sanitizeFileName = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const formatGeneratedDate = (value: string): string => {
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString();
+  } catch (error) {
+    console.warn('No se pudo formatear la fecha del informe', value, error);
+    return value;
+  }
+};
 
 const isPanelIssueType = (type: VersionIssueType): type is IssueFilterType =>
   ISSUE_TYPES.includes(type as IssueFilterType);
@@ -207,6 +245,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
   loading,
   error,
   hasPendingChanges = false,
+  reportOptions,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -220,7 +259,9 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     edge: '#94a3b8',
   });
   const [activeIssueFilters, setActiveIssueFilters] = useState<IssueFilterType[]>([]);
+  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   const [viewBox, setViewBox] = useState<GraphViewBox>({ x: 0, y: 0, width: 960, height: 520 });
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeFilterSet = useMemo(() => new Set(activeIssueFilters), [activeIssueFilters]);
   const hasActiveFilters = activeIssueFilters.length > 0;
@@ -520,6 +561,15 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
   useEffect(() => {
     setTooltip(null);
   }, [layout.nodes]);
+
+  useEffect(
+    () => () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const readThemeTokens = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -866,6 +916,15 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
               {node.name}
             </span>
             {hasIssues && <span className="tree-node__badge">⚠️</span>}
+            {viewMode === 'report' && (
+              reportData ? (
+                <ReportView report={reportData} />
+              ) : (
+                <p className="dependency-tree__status dependency-tree__status--info">
+                  Ejecuta un análisis para generar el informe en JSON y Markdown.
+                </p>
+              )
+            )}
           </div>
           <div
             className="tree-node__version"
@@ -893,7 +952,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
       <header className="dependency-tree__header">
         <div>
           <h2>Explora los resultados del análisis</h2>
-          <p>Alterna entre el árbol y el grafo para revisar versiones, incidencias y exportar reportes.</p>
+          <p>Alterna entre el árbol, el grafo o el informe para revisar versiones, incidencias y exportar reportes.</p>
         </div>
         <div className="dependency-tree__controls">
           <div className="dependency-tree__view-toggle" role="group" aria-label="Cambiar vista">
@@ -915,28 +974,78 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
             >
               Vista grafo
             </button>
+            <button
+              className={composeClassName('dependency-tree__toggle', {
+                'dependency-tree__toggle--active': viewMode === 'report',
+              })}
+              type="button"
+              onClick={() => setViewMode('report')}
+            >
+              Vista informe
+            </button>
           </div>
           <div className="dependency-tree__exports">
-            <button
-              type="button"
-              className="dependency-tree__action"
-              onClick={() => exportGraph('png')}
-              disabled={!graphReady || exportingFormat !== null}
-            >
-              Exportar PNG
-            </button>
-            <button
-              type="button"
-              className="dependency-tree__action"
-              onClick={() => exportGraph('pdf')}
-              disabled={!graphReady || exportingFormat !== null}
-            >
-              Exportar PDF
-            </button>
-            {exportingFormat && (
-              <div className="dependency-tree__export-loader" role="status" aria-live="polite">
-                <span className="dependency-tree__spinner" aria-hidden="true" />
-                Generando {exportingFormat === 'png' ? 'PNG' : 'PDF'}...
+            {viewMode === 'graph' && (
+              <>
+                <button
+                  type="button"
+                  className="dependency-tree__action"
+                  onClick={() => exportGraph('png')}
+                  disabled={!graphReady || exportingFormat !== null}
+                >
+                  Exportar PNG
+                </button>
+                <button
+                  type="button"
+                  className="dependency-tree__action"
+                  onClick={() => exportGraph('pdf')}
+                  disabled={!graphReady || exportingFormat !== null}
+                >
+                  Exportar PDF
+                </button>
+                {exportingFormat && (
+                  <div className="dependency-tree__export-loader" role="status" aria-live="polite">
+                    <span className="dependency-tree__spinner" aria-hidden="true" />
+                    Generando {exportingFormat === 'png' ? 'PNG' : 'PDF'}...
+                  </div>
+                )}
+              </>
+            )}
+            {viewMode === 'report' && (
+              <div className="dependency-tree__report-actions" role="group" aria-label="Exportar informe">
+                <button
+                  type="button"
+                  className="dependency-tree__action"
+                  onClick={() => handleReportDownload('json')}
+                  disabled={!reportData}
+                >
+                  Descargar JSON
+                </button>
+                <button
+                  type="button"
+                  className="dependency-tree__action"
+                  onClick={() => handleReportDownload('markdown')}
+                  disabled={!reportData}
+                >
+                  Descargar Markdown
+                </button>
+                <button
+                  type="button"
+                  className="dependency-tree__action"
+                  onClick={handleCopyMarkdown}
+                  disabled={!reportData}
+                >
+                  Copiar Markdown
+                </button>
+                {copyMessage && (
+                  <span
+                    className={`dependency-tree__report-feedback dependency-tree__report-feedback--${copyState}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {copyMessage}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -1229,3 +1338,206 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
     </section>
   );
 };
+
+interface ReportViewProps {
+  report: AnalysisReport;
+}
+
+const ReportView: React.FC<ReportViewProps> = ({ report }) => {
+  const metrics = [
+    { label: 'Dependencias directas', value: report.summary.directDependencies },
+    { label: 'Nodos totales', value: report.summary.totalNodes },
+    { label: 'Paquetes únicos', value: report.summary.uniquePackages },
+    { label: 'Hojas del árbol', value: report.summary.leafNodes },
+    { label: 'Profundidad máxima', value: report.summary.maxDepth },
+    { label: 'Relaciones (edges)', value: report.summary.dependencyEdges },
+    { label: 'Incidencias totales', value: report.summary.totalIssues },
+    { label: 'Paquetes duplicados', value: report.summary.duplicatePackages },
+  ];
+
+  const issueRows = REPORT_ISSUE_TYPES.map((type) => ({
+    type,
+    label: REPORT_ISSUE_LABELS[type] ?? type,
+    total: report.summary.issuesByType[type] ?? 0,
+  }));
+
+  const duplicates = Object.entries(report.duplicates);
+  const generatedDate = formatGeneratedDate(report.metadata.generatedAt);
+
+  return (
+    <section className="report-view" aria-label="Resumen del informe de dependencias">
+      <header className="report-view__header">
+        <h3>Informe ejecutivo</h3>
+        <p>
+          Generado el {generatedDate}. {report.metadata.includeDev ? 'Incluye' : 'No incluye'} devDependencies y{' '}
+          {report.metadata.includePeer ? 'sí' : 'no'} incluye peerDependencies. Profundidad máxima consultada:{' '}
+          {` ${report.metadata.maxDepth}`}.
+        </p>
+      </header>
+
+      <div className="report-view__metrics" role="list">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="report-view__metric" role="listitem">
+            <span className="report-view__metric-label">{metric.label}</span>
+            <span className="report-view__metric-value">{metric.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="report-view__section" aria-label="Incidencias por tipo">
+        <h4>Incidencias por tipo</h4>
+        <table className="report-view__issues-table">
+          <thead>
+            <tr>
+              <th scope="col">Tipo</th>
+              <th scope="col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {issueRows.map((row) => (
+              <tr key={row.type}>
+                <td>{row.label}</td>
+                <td>{row.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="report-view__section" aria-label="Incidencias destacadas">
+        <h4>Incidencias destacadas</h4>
+        {report.topIssues.length > 0 ? (
+          <ol className="report-view__issue-list">
+            {report.topIssues.map((issue) => {
+              const label = REPORT_ISSUE_LABELS[issue.type] ?? issue.type;
+              return (
+                <li key={`${issue.nodeId}-${issue.type}-${issue.message}`}>
+                  <span className={`report-view__issue-tag report-view__issue-tag--${issue.type}`}>
+                    {label}
+                  </span>
+                  <span className="report-view__issue-path">{issue.path}</span>
+                  <p className="report-view__issue-message">{issue.message}</p>
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <p className="report-view__empty">Sin incidencias detectadas en el análisis actual.</p>
+        )}
+      </div>
+
+      <div className="report-view__section" aria-label="Duplicados detectados">
+        <h4>Duplicados detectados</h4>
+        {duplicates.length > 0 ? (
+          <ul className="report-view__duplicate-list">
+            {duplicates.map(([pkgName, issues]) => (
+              <li key={pkgName}>
+                <strong>{pkgName}</strong>
+                <ul>
+                  {issues.map((issue) => (
+                    <li key={`${pkgName}-${issue.type}-${issue.message}`}>{issue.message}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="report-view__empty">No se detectaron paquetes duplicados.</p>
+        )}
+      </div>
+    </section>
+  );
+};
+  const normalizedReportOptions = useMemo(
+    () => ({
+      includeDev: reportOptions?.includeDev ?? false,
+      includePeer: reportOptions?.includePeer ?? true,
+      maxDepth: reportOptions?.maxDepth ?? 6,
+      source: reportOptions?.source,
+      packageName: reportOptions?.packageName,
+    }),
+    [
+      reportOptions?.includeDev,
+      reportOptions?.includePeer,
+      reportOptions?.maxDepth,
+      reportOptions?.source,
+      reportOptions?.packageName,
+    ],
+  );
+
+  const reportData = useMemo<AnalysisReport | null>(
+    () => (data ? createAnalysisReport(data, normalizedReportOptions) : null),
+    [data, normalizedReportOptions],
+  );
+
+  const reportBaseName = useMemo(() => {
+    if (!reportData) {
+      return 'pkglens-report';
+    }
+    const baseLabel = reportData.metadata.packageName ?? reportData.metadata.source ?? 'pkglens-report';
+    const sanitized = sanitizeFileName(baseLabel);
+    return sanitized || 'pkglens-report';
+  }, [reportData]);
+
+  const scheduleCopyReset = useCallback(
+    (state: 'success' | 'error', delay: number) => {
+      setCopyState(state);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopyState('idle');
+        copyTimeoutRef.current = null;
+      }, delay);
+    },
+    [],
+  );
+
+  const handleReportDownload = useCallback(
+    (format: ReportFormat) => {
+      if (!reportData || typeof window === 'undefined') {
+        return;
+      }
+      const content =
+        format === 'json'
+          ? JSON.stringify(reportData, null, 2)
+          : formatAnalysisReportAsMarkdown(reportData);
+      const blob = new Blob([content], {
+        type: format === 'json' ? 'application/json' : 'text/markdown',
+      });
+      const extension = format === 'json' ? 'json' : 'md';
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${reportBaseName}.${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    },
+    [reportBaseName, reportData],
+  );
+
+  const handleCopyMarkdown = useCallback(async () => {
+    if (!reportData || typeof navigator === 'undefined' || !navigator.clipboard) {
+      scheduleCopyReset('error', 3000);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(formatAnalysisReportAsMarkdown(reportData));
+      scheduleCopyReset('success', 2000);
+    } catch (error) {
+      console.error('No se pudo copiar el informe en Markdown', error);
+      scheduleCopyReset('error', 3000);
+    }
+  }, [reportData, scheduleCopyReset]);
+
+  const copyMessage = useMemo(() => {
+    if (copyState === 'success') {
+      return 'Markdown copiado al portapapeles.';
+    }
+    if (copyState === 'error') {
+      return 'No se pudo copiar el Markdown. Descarga el archivo para compartirlo manualmente.';
+    }
+    return null;
+  }, [copyState]);
+
