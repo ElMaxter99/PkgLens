@@ -1,13 +1,13 @@
 import { getPackageMetadata, NpmVersionMetadata } from '../utils/npmApi';
 import {
   SemverResolution,
+  buildRangeAdvice,
   collectDuplicateIssues,
   describeRange,
   findMaxSatisfying,
   formatVersionLabel,
   isOutdated,
   mergeIssues,
-  normalizeRange,
   VersionIssue,
 } from '../utils/semverUtils';
 import { getCriticalVulnerabilityIssues } from '../utils/vulnerabilityService';
@@ -86,7 +86,6 @@ async function resolveDependency(
 ): Promise<DependencyNode> {
   const issues: VersionIssue[] = [];
   const rangeDescription = describeRange(declaredRange);
-  const normalizedRange = normalizeRange(declaredRange);
 
   if (depth > context.options.maxDepth) {
     return {
@@ -144,15 +143,7 @@ async function resolveDependency(
       issues.push(...vulnerabilityIssues);
     }
 
-    if (normalizedRange === '*') {
-      const target = latestVersion ?? resolvedVersion;
-      issues.push({
-        type: 'advice',
-        message: target
-          ? `El rango abierto '*' permite cualquier versión. Cambia a ^${target} para acotar las actualizaciones.`
-          : "El rango abierto '*' permite cualquier versión. Cambia a un rango acotado (^ o ~) para mejorar la reproducibilidad.",
-      });
-    }
+    issues.push(...buildRangeAdvice(declaredRange, resolvedVersion, latestVersion));
 
     if (isOutdated(resolvedVersion, latestVersion)) {
       issues.push({
