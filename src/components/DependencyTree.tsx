@@ -413,6 +413,7 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
       return items;
     }
     const filterSet = new Set<IssueFilterType>(activeIssueFilters);
+    const seen = new Set<string>();
 
     flattenedNodes.forEach(({ node, path }) => {
       node.issues.forEach((issue) => {
@@ -422,6 +423,12 @@ export const DependencyTree: React.FC<DependencyTreeProps> = ({
         if (filterSet.size > 0 && !filterSet.has(issue.type)) {
           return;
         }
+
+        const dedupeKey = `${node.nodeId}|${issue.type}|${issue.message}`;
+        if (seen.has(dedupeKey)) {
+          return;
+        }
+        seen.add(dedupeKey);
 
         items.push({
           node,
